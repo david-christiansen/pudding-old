@@ -14,22 +14,20 @@
 (define-for-syntax (squish depth)
   (if (<= depth 0)
       (fail "Search depth exhausted")
-      (begin-tactics
-        (trace (format "Searching at ~a" depth))
-        (apply first-success
-               (append
-                (for/list ([h (range 0 5)]) (hypothesis h))
-                (list ;; addition is not here because it won't help me inhabit more types
-                 (int-intro 42)
-                 (string-intro "hej")
-                 (with-subgoals length-of-string (squish (- depth 1)))
-                 (with-subgoals (function-intro 'x) (squish (- depth 1)))
-                 (with-subgoals (application #'Int)
-                   (squish (- depth 1))
-                   (squish (- depth 1)))
-                 (with-subgoals (application #'String)
-                   (squish (- depth 1))
-                   (squish (- depth 1)))))))))
+      (apply first-success
+             (append
+              (for/list ([h (range 0 5)]) (hypothesis h))
+              (list ;; addition is not here because it won't help me inhabit more types
+               (int-intro 42)
+               (string-intro "hej")
+               (with-subgoals length-of-string (squish (- depth 1)))
+               (with-subgoals (function-intro 'x) (squish (- depth 1)))
+               (with-subgoals (application #'Int)
+                 (squish (- depth 1))
+                 (squish (- depth 1)))
+               (with-subgoals (application #'String)
+                 (squish (- depth 1))
+                 (squish (- depth 1))))))))
 
 ;; A linear tactic script, dispatching subgoals as they arise
 
