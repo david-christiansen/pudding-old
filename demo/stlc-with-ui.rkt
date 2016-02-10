@@ -1,9 +1,8 @@
 #lang racket
 
-(require "stlc.rkt")
-(require "text-ui.rkt")
-(require "tactics.rkt")
-(require (only-in "infrastructure.rkt" new-goal))
+(require "../theories/stlc.rkt")
+(require "../text-ui.rkt")
+(require "../tactics.rkt")
 
 (define (stlc-prover goal)
   (prover goal (namespace-anchor->namespace stlc)))

@@ -2,9 +2,9 @@
 
 (require
  ;; Make definitions with the refiner
- "refiner-define.rkt"
+ "../refiner-define.rkt"
  ;; The theory and tactics we care about
- (for-syntax "stlc.rkt" "tactics.rkt" racket/list))
+ (for-syntax "../theories/stlc.rkt" "../tactics.rkt" racket/list))
 
 (module+ test
   (require rackunit))
@@ -56,5 +56,9 @@
   (squish 3))
 
 (module+ test
-  (check-equal? (add-two 4) 6)
-  (check-equal? (add-2 17) 19))
+  (check-equal? (add-two 4)
+                6)
+  (check-equal? (add-2 17)
+                19)
+  (check-equal? ((another-test 2) (lambda (x) "hi"))
+                "hej"))

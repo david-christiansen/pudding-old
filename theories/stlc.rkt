@@ -2,7 +2,7 @@
 
 (require syntax/parse (for-syntax syntax/parse))
 #;(require macro-debugger/syntax-browser)
-(require "infrastructure.rkt")
+(require "../infrastructure.rkt")
 
 (require (for-template racket/base racket/match))
 
