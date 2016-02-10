@@ -2,7 +2,8 @@
 
 (require "infrastructure.rkt")
 
-(provide proof skip subgoals tactics tactic-trace? try)
+(provide begin-for-subgoals begin-tactics fail first-success proof
+         skip with-subgoals tactic-trace? trace try)
 
 ;;; Executing tactics
 (define tactic-trace? (make-parameter #f))
@@ -16,7 +17,7 @@
 (struct tactics-frame (extracts subgoals extractor next))
 
 ;; A tactic script succeeds if it complete dispatches its subgoal
-(define ((tactics . tacs) goal)
+(define ((begin-tactics . tacs) goal)
   (let loop ([remaining-tactics tacs]
              [extracts empty]
              [subgoals (list goal)]
@@ -64,14 +65,27 @@
 
 ;;; A tactic, like a rule, is a function from a goal to a refinement.
 
-;; As in Coq
-(define ((try tactic) goal)
-  (with-handlers ([exn:fail:refinement? (identity-refinement goal)])
-    (tactic goal)))
+(define ((first-success . rules) goal)
+  (if (cons? rules)
+      (with-handlers ([exn:fail:refinement?
+                       (λ (e) ((apply first-success (cdr rules)) goal))])
+        ((car rules) goal))
+      (raise-refinement-error 'first-success goal "Alternatives exhausted.")))
+
+(define (try tactic)
+  (first-success tactic
+                 skip))
 
 ;; A tactic that does nothing
 (define (skip goal)
   (identity-refinement goal))
+
+(define ((trace message) goal)
+  (displayln message)
+  (skip goal))
+
+(define ((fail [message "Failed"]) goal)
+  (raise-refinement-error 'fail goal message))
 
 (define (list-split lst lengths)
   (if (null? lengths)
@@ -82,14 +96,18 @@
         (cons start (list-split rest (cdr lengths))))))
 
 ;; Like Coq's ; tactical
-(define ((and-then outer . inner) goal)
+(define ((begin-for-subgoals outer . inner) goal)
   (cond [(null? inner)
          (outer goal)]
         [else
          (match-define (refinement new-goals ext) (outer goal))
-         (define subgoal-refinements (map (apply and-then inner) new-goals))
-         (define subgoal-counts (map (compose length refinement-new-goals)
-                                     subgoal-refinements))
+         (define subgoal-refinements
+           (map (apply begin-for-subgoals inner)
+                new-goals))
+         (define subgoal-counts
+           (map (compose length refinement-new-goals)
+                subgoal-refinements))
+
          (refinement (append* (map refinement-new-goals subgoal-refinements))
                      (λ extraction-args
                        (define subgoal-extracts
@@ -100,10 +118,12 @@
                        (apply ext subgoal-extracts)))]))
 
 ;; Like JonPRL's ; with square brackets
-(define ((subgoals outer . inner) goal)
+(define ((with-subgoals outer . inner) goal)
   (match (outer goal)
     [(refinement new-goals extractor) #:when (= (length new-goals) (length inner))
-     (let* ([subgoal-refinements (map apply inner new-goals)]
+     (let* ([subgoal-refinements (for/list ([subgoal-tactic inner]
+                                            [this-subgoal new-goals])
+                                   (subgoal-tactic this-subgoal))]
             [subgoal-counts (map (compose length refinement-new-goals)
                                  subgoal-refinements)])
        (refinement (append* (map refinement-new-goals subgoal-refinements))
