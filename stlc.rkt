@@ -51,6 +51,17 @@
     [(type String) #t]
     [_ #f]))
 
+(define (type=? left right)
+  (match* (left right)
+    [((type (--> t1 t2))
+      (type (--> s1 s2)))
+     (and (type=? t1 s1)
+          (type=? t2 s2))]
+    [((type Int) (type Int))
+     #t]
+    [((type String) (type String))
+     #t]
+    [(_ _) #f]))
 
 ;;; Structural rules
 (define/contract (hypothesis num)
@@ -58,9 +69,17 @@
   (match-lambda
     [(>> hypotheses goal)
      (if (< num (length hypotheses))
-         (done-refining (car (list-ref hypotheses num)))
+         (match-let ([(cons id type) (list-ref hypotheses num)])
+           (if (type=? type goal)
+               (done-refining id)
+               (raise-refinement-error
+                'hypothesis
+                (>> hypotheses goal)
+                (format "Type mismatch: expected ~a, got ~a"
+                        (syntax->datum goal)
+                        (syntax->datum type)))))
          (raise-refinement-error
-          'hypotheses
+          'hypothesis
           (>> hypotheses goal)
           "Hypothesis out of bounds"))]))
 
