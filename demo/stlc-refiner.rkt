@@ -55,10 +55,20 @@
 (define/refiner another-test (--> Int (--> (--> Int String) String))
   (squish 3))
 
+(define/refiner strlen (--> String Int)
+  (begin-tactics
+    (function-intro 'str)
+    length-of-string
+    (hypothesis 0)))
+
 (module+ test
   (check-equal? (add-two 4)
                 6)
+
   (check-equal? (add-2 17)
                 19)
+
   (check-equal? ((another-test 2) (lambda (x) "hi"))
-                "hej"))
+                "hej")
+
+  (check-equal? (strlen "halløjsa!") 9))

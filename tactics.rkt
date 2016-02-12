@@ -1,6 +1,6 @@
 #lang racket
 
-(require "infrastructure.rkt")
+(require "infrastructure.rkt" "error-handling.rkt")
 
 (provide begin-for-subgoals begin-tactics fail first-success proof
          skip with-subgoals tactic-trace? trace try)
@@ -17,14 +17,15 @@
 (struct tactics-frame (extracts subgoals extractor next))
 
 ;; A tactic script succeeds if it complete dispatches its subgoal
-(define ((begin-tactics . tacs) goal)
+(define/contract ((begin-tactics . tacs) goal)
+  (->* () #:rest (listof rule/c) rule/c)
   (let loop ([remaining-tactics tacs]
              [extracts empty]
              [subgoals (list goal)]
              [extractor
               ;; The root "extractor" injects the extraction back into
               ;; the goal mechanism
-              (λ (e) (refinement empty (thunk e)))]
+              (λ (e) (success (refinement empty (thunk e))))]
              [next #f])
     (when (tactic-trace?)
       (displayln "---- TACTIC STATE ----")
@@ -45,47 +46,57 @@
              [#f this-extract])]
 
           [(null? remaining-tactics)
-           (raise-refinement-error 'tactics
-                                   (car subgoals)
-                                   "No more tactics, but unsolved goals remain")]
+           (refinement-fail 'tactics
+                            (car subgoals)
+                            "No more tactics, but unsolved goals remain")]
           [else
-           (match ((car remaining-tactics) (car subgoals))
-             [(refinement new-subgoals new-extractor)
-              (loop (cdr remaining-tactics)
-                    empty
-                    new-subgoals
-                    new-extractor
-                    (tactics-frame extracts (cdr subgoals) extractor next))])])))
+           (match-let! ([(refinement new-subgoals new-extractor)
+                         ((car remaining-tactics) (car subgoals))])
+             (loop (cdr remaining-tactics)
+                   empty
+                   new-subgoals
+                   new-extractor
+                   (tactics-frame extracts (cdr subgoals) extractor next)))])))
 
 ;; Attempt to prove goal completely using rule
-(define (proof goal rule)
+(define/contract (proof goal rule)
+  (-> syntax? rule/c syntax?)
   (match (rule (new-goal goal))
-    [(refinement (list) ext) (ext)]
-    [_ (raise-refinement-error 'proof goal "proof did not completely solve goal.")]))
+    [(success (refinement (list) ext))
+     (ext)]
+    [(success other)
+     (raise-result-error 'proof "complete proof" other)]
+    [(failure (refinement-error rule-name bad-goal message))
+     (raise-user-error "Error during proof" rule-name bad-goal message)]))
 
 ;;; A tactic, like a rule, is a function from a goal to a refinement.
 
-(define ((first-success . rules) goal)
+(define/contract ((first-success . rules) goal)
+  (->* () #:rest (listof rule/c) rule/c)
   (if (cons? rules)
-      (with-handlers ([exn:fail:refinement?
-                       (λ (e) ((apply first-success (cdr rules)) goal))])
-        ((car rules) goal))
-      (raise-refinement-error 'first-success goal "Alternatives exhausted.")))
+      (match ((car rules) goal)
+        [(? success? x) x]
+        [(? failure? x) ((apply first-success (cdr rules)) goal)])
+      (refinement-fail 'first-success goal "Alternatives exhausted.")))
 
-(define (try tactic)
+(define/contract (try tactic)
+  (-> rule/c rule/c)
   (first-success tactic
                  skip))
 
 ;; A tactic that does nothing
-(define (skip goal)
+(define/contract (skip goal)
+  rule/c
   (identity-refinement goal))
 
-(define ((trace message) goal)
+(define/contract ((trace message) goal)
+  (-> string? rule/c)
   (displayln message)
   (skip goal))
 
-(define ((fail [message "Failed"]) goal)
-  (raise-refinement-error 'fail goal message))
+(define/contract ((fail [message "Failed"]) goal)
+  (->* () (string?) rule/c)
+  (refinement-fail 'fail goal message))
 
 (define (list-split lst lengths)
   (if (null? lengths)
@@ -96,42 +107,47 @@
         (cons start (list-split rest (cdr lengths))))))
 
 ;; Like Coq's ; tactical
-(define ((begin-for-subgoals outer . inner) goal)
+(define/contract ((begin-for-subgoals outer . inner) goal)
+  (->* (rule/c) #:rest (listof rule/c) rule/c)
   (cond [(null? inner)
          (outer goal)]
         [else
-         (match-define (refinement new-goals ext) (outer goal))
-         (define subgoal-refinements
-           (map (apply begin-for-subgoals inner)
-                new-goals))
-         (define subgoal-counts
-           (map (compose length refinement-new-goals)
-                subgoal-refinements))
-
-         (refinement (append* (map refinement-new-goals subgoal-refinements))
-                     (λ extraction-args
-                       (define subgoal-extracts
-                         (for/list ([r subgoal-refinements]
-                                    [e (list-split extraction-args
-                                                   subgoal-counts)])
-                           (apply (refinement-extraction r) e)))
-                       (apply ext subgoal-extracts)))]))
+         (match-let! ([(refinement new-goals ext) (outer goal)]
+                      [subgoal-refinements
+                       (all-success
+                        (map (apply begin-for-subgoals inner)
+                             new-goals))])
+           (let ([subgoal-counts
+                  (map (compose length refinement-new-goals)
+                       subgoal-refinements)])
+             (success
+              (refinement (append* (map refinement-new-goals subgoal-refinements))
+                          (λ extraction-args
+                            (define subgoal-extracts
+                              (for/list ([r subgoal-refinements]
+                                         [e (list-split extraction-args
+                                                        subgoal-counts)])
+                                (apply (refinement-extraction r) e)))
+                            (apply ext subgoal-extracts))))))]))
 
 ;; Like JonPRL's ; with square brackets
-(define ((with-subgoals outer . inner) goal)
-  (match (outer goal)
-    [(refinement new-goals extractor) #:when (= (length new-goals) (length inner))
-     (let* ([subgoal-refinements (for/list ([subgoal-tactic inner]
-                                            [this-subgoal new-goals])
-                                   (subgoal-tactic this-subgoal))]
-            [subgoal-counts (map (compose length refinement-new-goals)
-                                 subgoal-refinements)])
-       (refinement (append* (map refinement-new-goals subgoal-refinements))
-                   (λ extraction-args
-                     (let ([subgoal-extracts
-                             (map (λ (r e)
-                                    (apply (refinement-extraction r) e))
-                                  subgoal-refinements
-                                  (list-split extraction-args subgoal-counts))])
-                        (apply extractor subgoal-extracts)))))]
-    [_ (raise-refinement-error 'subgoals goal "mismatched subgoal count")]))
+(define/contract ((with-subgoals outer . inner) goal)
+  (->* (rule/c) #:rest (listof rule/c) rule/c)
+  (match! (outer goal)
+          [(refinement new-goals extractor) #:when (= (length new-goals) (length inner))
+           (let! ([subgoal-refinements (all-success
+                                        (for/list ([subgoal-tactic inner]
+                                                   [this-subgoal new-goals])
+                                          (subgoal-tactic this-subgoal)))])
+             (let* ([subgoal-counts (map (compose length refinement-new-goals)
+                                         subgoal-refinements)])
+               (success
+                (refinement (append* (map refinement-new-goals subgoal-refinements))
+                            (λ extraction-args
+                              (let ([subgoal-extracts
+                                     (map (λ (r e)
+                                            (apply (refinement-extraction r) e))
+                                          subgoal-refinements
+                                          (list-split extraction-args subgoal-counts))])
+                                (apply extractor subgoal-extracts)))))))]
+          [_ (refinement-fail 'subgoals goal "mismatched subgoal count")]))

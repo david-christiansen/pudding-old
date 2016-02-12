@@ -2,7 +2,7 @@
 
 (require syntax/parse (for-syntax syntax/parse))
 #;(require macro-debugger/syntax-browser)
-(require "../infrastructure.rkt")
+(require "../error-handling.rkt" "../infrastructure.rkt")
 
 (require (for-template racket/base racket/match))
 
@@ -72,13 +72,13 @@
          (match-let ([(cons id type) (list-ref hypotheses num)])
            (if (type=? type goal)
                (done-refining id)
-               (raise-refinement-error
+               (refinement-fail
                 'hypothesis
                 (>> hypotheses goal)
                 (format "Type mismatch: expected ~a, got ~a"
                         (syntax->datum goal)
                         (syntax->datum type)))))
-         (raise-refinement-error
+         (refinement-fail
           'hypothesis
           (>> hypotheses goal)
           "Hypothesis out of bounds"))]))
@@ -90,26 +90,30 @@
   (match-lambda
     [(>> _ (type Int))
      (done-refining (datum->syntax #'here x))]
-    [other (raise-refinement-error 'int-intro other "goal type must be Int")]))
+    [other (refinement-fail 'int-intro other "goal type must be Int")]))
 
 (define/contract (addition arg-count)
   (-> natural-number/c rule/c)
   (lambda (sequent)
     (match sequent
       [(>> hypotheses (type Int))
-       (refinement (build-list arg-count
-                               (thunk* (>> hypotheses (type Int))))
-                   (lambda arguments
-                     (datum->syntax #'here (cons #'+ arguments))))]
-      [other (raise-refinement-error 'arg-count other "goal type must be Int")])))
+       (success
+        (refinement (build-list arg-count
+                                (thunk* (>> hypotheses (type Int))))
+                    (lambda arguments
+                      (datum->syntax #'here (cons #'+ arguments)))))]
+      [other (refinement-fail 'arg-count other "goal type must be Int")])))
 
 (define/contract (length-of-string sequent) rule/c
   (match sequent
     [(>> hypotheses (type Int))
-     (refinement (list (>> (sequent-hypotheses sequent) (type String)))
-                 (lambda (argument)
-                   #`(string-length #,argument)))]
-    [other (raise-refinement-error 'length-of-string other "Goal type must be Int")]))
+     (success
+      (refinement
+       (list (>> (sequent-hypotheses sequent) (type String)))
+       (lambda (argument)
+         #`(string-length #,argument))))]
+    [other
+     (refinement-fail 'length-of-string other "Goal type must be Int")]))
 
 ;;; String rules
 (define/contract (string-intro str)
@@ -117,7 +121,7 @@
   (match-lambda
     [(>> _ (type String))
      (done-refining (datum->syntax #'here str))]
-    [other (raise-refinement-error 'string-intro other "Goal type must be String")]))
+    [other (refinement-fail 'string-intro other "Goal type must be String")]))
 
 ;;; Function rules
 (define/contract (function-intro x)
@@ -126,19 +130,20 @@
     [(>> hyps (type (--> dom cod)))
      (let* ([new-scope (make-syntax-introducer)]
             [annotated-name (new-scope (datum->syntax #f x) 'add)])
-       (refinement (list (>> (cons (cons annotated-name
-                                         dom)
-                                   hyps)
-                             cod))
-                   (lambda (extract)
-                     #`(lambda (#,annotated-name)
-                         #,(new-scope extract 'add)))))]
-    [other (raise-refinement-error 'function-intro other "Goal must be function type")]))
+       (success
+        (refinement (list (>> (cons (cons annotated-name
+                                          dom)
+                                    hyps)
+                              cod))
+                    (lambda (extract)
+                      #`(lambda (#,annotated-name)
+                          #,(new-scope extract 'add))))))]
+    [other (refinement-fail 'function-intro other "Goal must be function type")]))
 
 (define/contract ((application dom) proof-goal)
   (-> syntax? rule/c)
   (unless (type? dom)
-    (raise-refinement-error 'application proof-goal (format "Not a type: ~a" dom)))
+    (refinement-fail 'application proof-goal (format "Not a type: ~a" dom)))
   (match proof-goal
     [(>> hypotheses goal)
      (refinement

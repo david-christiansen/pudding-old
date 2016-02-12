@@ -1,6 +1,6 @@
 #lang racket
 
-(require (for-syntax syntax/parse racket/match "infrastructure.rkt"))
+(require (for-syntax syntax/parse racket/match "infrastructure.rkt" "error-handling.rkt"))
 
 (provide define/refiner)
 
@@ -15,9 +15,15 @@
      #'(begin
          (define-for-syntax extract
            (match (script (new-goal #'type))
-             [(refinement (list) ext) (ext)]
-             [(refinement (cons goal goals) _)
+             [(success (refinement (list) ext)) (ext)]
+             [(success (refinement (cons goal goals) _))
               (raise-syntax-error 'define/refiner "Unsolved goal" script)]
+             [(failure (refinement-error rule-name bad-goal message))
+              (raise-syntax-error 'define/refiner
+                                  (format "Error in script: ~a\n  Goal: ~a\n\tRule: ~a"
+                                          message
+                                          bad-goal
+                                          rule-name))]
              [_ (raise-syntax-error 'define/refiner "The impossible happened")]))
 
          (define-syntax (get-extract stx) extract)

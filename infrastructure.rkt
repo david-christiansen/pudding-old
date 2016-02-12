@@ -1,15 +1,15 @@
 #lang racket
 
-(require (for-syntax syntax/parse))
+(require (for-syntax syntax/parse) "error-handling.rkt")
 
 (provide (struct-out sequent)
          (struct-out refinement)
-         (struct-out exn:fail:refinement)
+         (struct-out refinement-error)
          new-goal
          done-refining
          rule/c
          >>
-         raise-refinement-error
+         refinement-fail
          identity-refinement)
 
 (module+ test
@@ -39,21 +39,20 @@
 
 
 (define (done-refining term)
-  (refinement empty (thunk* term)))
+  (-> syntax? (can-fail/c refinement-error? refinement?))
+  (success (refinement empty (thunk* term))))
 
 (module+ test
-  (check-equal? ((refinement-extraction (done-refining 'broccoli)))
+  (check-equal? ((refinement-extraction (success-value (done-refining 'broccoli))))
                 'broccoli))
 
-(define (identity-refinement goal)
-  (refinement (list goal) identity))
+(struct refinement-error (rule-name goal message) #:transparent)
 
-(define rule/c (-> sequent? refinement?))
+(define (refinement-fail rule-name goal message)
+  (failure (refinement-error rule-name goal message)))
 
-(struct exn:fail:refinement exn:fail (cant-refine) #:transparent)
+(define rule/c (-> sequent? (can-fail/c refinement-error? refinement?)))
 
-(define (raise-refinement-error rule-name goal message)
-  (raise (exn:fail:refinement
-          (format "~a: cannot refine ~s~n~a" rule-name goal message)
-          (current-continuation-marks)
-          goal)))
+(define/contract (identity-refinement goal)
+  rule/c
+  (success (refinement (list goal) identity)))
