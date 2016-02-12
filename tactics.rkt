@@ -134,20 +134,20 @@
 (define/contract ((with-subgoals outer . inner) goal)
   (->* (rule/c) #:rest (listof rule/c) rule/c)
   (match! (outer goal)
-          [(refinement new-goals extractor) #:when (= (length new-goals) (length inner))
-           (let! ([subgoal-refinements (all-success
-                                        (for/list ([subgoal-tactic inner]
-                                                   [this-subgoal new-goals])
-                                          (subgoal-tactic this-subgoal)))])
-             (let* ([subgoal-counts (map (compose length refinement-new-goals)
-                                         subgoal-refinements)])
-               (success
-                (refinement (append* (map refinement-new-goals subgoal-refinements))
-                            (λ extraction-args
-                              (let ([subgoal-extracts
-                                     (map (λ (r e)
-                                            (apply (refinement-extraction r) e))
-                                          subgoal-refinements
-                                          (list-split extraction-args subgoal-counts))])
-                                (apply extractor subgoal-extracts)))))))]
-          [_ (refinement-fail 'subgoals goal "mismatched subgoal count")]))
+    [(refinement new-goals extractor) #:when (= (length new-goals) (length inner))
+     (let! ([subgoal-refinements (all-success
+                                  (for/list ([subgoal-tactic inner]
+                                             [this-subgoal new-goals])
+                                    (subgoal-tactic this-subgoal)))])
+       (let* ([subgoal-counts (map (compose length refinement-new-goals)
+                                   subgoal-refinements)])
+         (success
+          (refinement (append* (map refinement-new-goals subgoal-refinements))
+                      (λ extraction-args
+                        (let ([subgoal-extracts
+                               (map (λ (r e)
+                                      (apply (refinement-extraction r) e))
+                                    subgoal-refinements
+                                    (list-split extraction-args subgoal-counts))])
+                          (apply extractor subgoal-extracts)))))))]
+    [_ (refinement-fail 'subgoals goal "mismatched subgoal count")]))
