@@ -15,11 +15,11 @@
 (define ((display-error header) e)
   (displayln header)
   (parameterize ([current-error-port (current-output-port)])
-    ((error-display-handler) (exn-message e) e))
+    ((error-display-handler)
+     (exn-message e) e))
   (displayln "Try again!"))
 
-(define/contract (refinement-step path sequent namespace)
-  (-> (listof exact-nonnegative-integer?) sequent? namespace? syntax?)
+(define (refinement-step path sequent namespace)
   (define (retry) (refinement-step path sequent namespace))
   (if (null? path)
       (display "At top.")
@@ -32,24 +32,29 @@
   (with-handlers ([exn:fail? (lambda (e)
                                ((display-error "Exception during refinement:") e)
                                (retry))])
-    (with-fallbacks ([refinement-error? (lambda (e)
-                                          ((display-error "Refinement failed:") e)
-                                          (retry))])
+    (with-fallbacks refinement-error
+      ([refinement-error? (lambda (e)
+                            ((display-error "Refinement failed:")
+                             (exn:fail (refinement-error-message e)
+                                       (current-continuation-marks)))
+                            (retry))])
       (let* ([input (read)])
         (if (equal? input ':q)
             (begin (printf "Exiting, proof incomplete\n") (exit 0))
-            (let ([rule (eval input namespace)])
-              (match! (rule sequent)
-                [(refinement new-goals extractor)
-                 (let ([subterms (for/list ([g new-goals]
-                                            [pos
-                                             (range 0
-                                                    (length new-goals))])
-                                   (refinement-step (cons pos path)
-                                                    g
-                                                    namespace))])
-                   (success (apply extractor subterms)))])))))))
-
+            (error-do refinement-error
+              (let rule (call-with-values
+                         (thunk (eval input namespace))
+                         (lambda args
+                           (if (cons? args)
+                               (car args)
+                               (error 'refinement-step "Didn't get a rule")))))
+              (<- (refinement new-goals extractor) (rule sequent))
+              (let subterms (for/list ([g new-goals]
+                                       [pos (range 0 (length new-goals))])
+                                (refinement-step (cons pos path)
+                                                 g
+                                                 namespace)))
+              (pure (apply extractor subterms))))))))
 
 (define (prover goal namespace)
   (let* ([sequent (new-goal goal)]
