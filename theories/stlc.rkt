@@ -81,7 +81,8 @@
          (refinement-fail
           'hypothesis
           (>> hypotheses goal)
-          "Hypothesis out of bounds"))]))
+          "Hypothesis out of bounds"))]
+    [other (refinement-fail 'hypothesis other "not a well-formed goal")]))
 
 
 ;;; Int rules

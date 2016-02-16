@@ -1,6 +1,7 @@
 #lang racket
 
 (require (for-syntax syntax/parse))
+
 (provide all-success can-fail? let! match-let! match! with-fallbacks
          success/c failure/c can-fail/c
          (struct-out success)
@@ -30,11 +31,14 @@
 
 (define-syntax (let! stx)
   (syntax-parse stx
-    [(let! () body:expr)
-     #'body]
-    [(let! (binding:failure-binding binds ...) body:expr)
+    [(let! ()
+       expr-or-def ... body:expr)
+     #'(begin expr-or-def ... body)]
+    [(let! (binding:failure-binding binds ...)
+       expr-or-def ... body:expr)
      #'(bind binding.computation
-             (lambda (binding.name) (let! (binds ...) body)))]))
+             (lambda (binding.name)
+               (let! (binds ...) expr-or-def ... body)))]))
 
 (define-syntax (match-let! stx)
   (syntax-parse stx
@@ -49,7 +53,10 @@
     [(match! subject (pattern body-or-def ... body) ...)
      #'(match subject
          [(success pattern) body-or-def ... body] ...
-         [(failure err) (failure err)])]))
+         [(failure err) (failure err)]
+         [other (raise-arguments-error 'match!
+                                       "Not a success or failure"
+                                       "subject" subject)])]))
 
 (define (fallbacks failure-reason . handlers)
   (cond [(null? handlers)
@@ -67,7 +74,12 @@
          (match res
            [(success val) val]
            [(failure reason)
-            (fallbacks reason  (cons pred handler) ...)]))]))
+            (fallbacks reason  (cons pred handler) ...)]
+           [other
+            (raise-arguments-error 'with-fallbacks
+                                   "Not a success or failure"
+                                   "result"
+                                   other)]))]))
 
 
 ;;; TODO: make something better here, like for/success-list
