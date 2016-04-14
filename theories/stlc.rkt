@@ -67,7 +67,7 @@
 (define/contract (hypothesis num)
   (-> natural-number/c rule/c)
   (match-lambda
-    [(>> hypotheses goal)
+    [(sequent hypotheses goal)
      (if (< num (length hypotheses))
          (match-let ([(cons id type) (list-ref hypotheses num)])
            (if (type=? type goal)
