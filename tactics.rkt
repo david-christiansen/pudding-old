@@ -151,3 +151,4 @@
                                    (list-split extraction-args subgoal-counts))])
                          (apply extractor subgoal-extracts))))))]
      [_ (refinement-fail 'subgoals goal "mismatched subgoal count")])))
+
