@@ -110,7 +110,7 @@
     [(>> hypotheses (type Int))
      (success
       (refinement
-       (list (>> (sequent-hypotheses sequent) (type String)))
+       (list (>> hypotheses (type String)))
        (lambda (argument)
          #`(string-length #,argument))))]
     [other

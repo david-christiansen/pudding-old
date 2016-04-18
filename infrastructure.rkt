@@ -36,7 +36,10 @@
                   [_ #t])))
 
 ;;; Refinement infrastructure
-;; extraction should be a function from a extracts to an extract
+;;
+;; 
+;;
+;; extraction should be a function from the new-goals' extracts to an extract
 (struct refinement
   (new-goals extraction)
   #:transparent)
