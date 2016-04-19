@@ -8,7 +8,7 @@
 
 (provide stlc
          type? --> Int String
-         addition application function-intro hypothesis int-intro
+         addition application function-intro assumption int-intro
          length-of-string string-intro )
 
 (define-namespace-anchor stlc)
@@ -64,25 +64,30 @@
     [(_ _) #f]))
 
 ;;; Structural rules
-(define/contract (hypothesis num)
+(define/contract (assumption num)
   (-> natural-number/c rule/c)
   (match-lambda
-    [(hypothetical hypotheses goal)
+    [(>> hypotheses goal)
      (if (< num (length hypotheses))
-         (match-let ([(cons id type) (list-ref hypotheses num)])
-           (if (type=? type goal)
-               (done-refining id)
-               (refinement-fail
-                'hypothesis
-                (>> hypotheses goal)
-                (format "Type mismatch: expected ~a, got ~a"
-                        (syntax->datum goal)
-                        (syntax->datum type)))))
+         (match-let ([(hypothesis id type visible?) (list-ref hypotheses num)])
+           (cond
+             [(not visible?)
+              (refinement-fail 'assumption
+                               (>> hypotheses goal)
+                               "Tried to use an irrelevant hypothesis")]
+             [(type=? type goal)
+              (done-refining id)]
+             [else (refinement-fail
+                    'assumption
+                    (>> hypotheses goal)
+                    (format "Type mismatch: expected ~a, got ~a"
+                            (syntax->datum goal)
+                            (syntax->datum type)))]))
          (refinement-fail
-          'hypothesis
+          'assumption
           (>> hypotheses goal)
-          "Hypothesis out of bounds"))]
-    [other (refinement-fail 'hypothesis other "not a well-formed goal")]))
+          "Assumption out of bounds"))]
+    [other (refinement-fail 'assumption other "not a well-formed goal")]))
 
 
 ;;; Int rules
@@ -133,8 +138,9 @@
             [annotated-name (new-scope (datum->syntax #f x) 'add)])
        (success
         (refinement (list (relevant-subgoal
-                           (>> (cons (cons annotated-name
-                                           dom)
+                           (>> (cons (hypothesis annotated-name
+                                                 dom
+                                                 #t)
                                      hyps)
                                cod)))
                     (lambda (extract)

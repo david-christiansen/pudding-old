@@ -9,7 +9,7 @@
         [goal (hypothetical-goal hypothetical)])
     (for ([hyp (reverse hypotheses)]
           [which-hyp (range (length hypotheses) 0 -1)])
-      (printf "~a. ~a\n" (- which-hyp 1) (syntax->datum (cdr hyp))))
+      (printf "~a. ~a\n" (- which-hyp 1) (syntax->datum (hypothesis-assumption hyp))))
     (printf ">> ~a\n" (syntax->datum goal))))
 
 (define ((display-error header) e)

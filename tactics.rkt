@@ -59,14 +59,20 @@
           [else
            (error-do refinement-error
              (let this-subgoal (car subgoals))
+             (let this-relevant? (subgoal-relevant? this-subgoal))
              (<- (refinement new-subgoals new-extractor)
                  ((car remaining-tactics)
-                  (subgoal-obligation this-subgoal)))
+                  ((if this-relevant? identity unhide-all)
+                   (subgoal-obligation this-subgoal))))
              (loop (cdr remaining-tactics)
                    empty
                    new-subgoals
                    new-extractor
-                   (tactics-frame extracts (cdr subgoals) (subgoal-relevant? this-subgoal) extractor next)))])))
+                   (tactics-frame extracts
+                                  (cdr subgoals)
+                                  this-relevant?
+                                  extractor
+                                  next)))])))
 
 ;; Attempt to prove goal completely using rule
 (define (proof goal rule)
@@ -93,7 +99,7 @@
 
 ;; A tactic that does nothing
 (define (skip goal)
-  (identity-refinement (relevant-subgoal goal)))
+  (success (identity-refinement (relevant-subgoal goal))))
 
 (define ((trace message) goal)
   (displayln message)
@@ -110,7 +116,8 @@
       (let-values ([(start rest) (split-at lst (car lengths))])
         (cons start (list-split rest (cdr lengths))))))
 
-;; Like Coq's ; tactical
+;; Like Coq's ; tactical: first, run outer on the goal. If success,
+;; run (begin-for-subgoals inner) on each subgoal.
 (define ((begin-for-subgoals outer . inner) goal)
   (cond [(null? inner)
          (outer goal)]
@@ -119,9 +126,10 @@
            [<- (refinement new-goals ext) (outer goal)]
            [<- subgoal-refinements
                (all-success
-                (map (apply begin-for-subgoals inner) new-goals))]
-           (let subgoal-counts (map goal-count subgoal-refinements))
-           (success
+                (map (apply begin-for-subgoals inner)
+                     new-goals))]
+           [let subgoal-counts (map goal-count subgoal-refinements)]
+           (pure
             (refinement (append* (map refinement-new-goals subgoal-refinements))
                         (λ extraction-args
                           (define subgoal-extracts
@@ -144,8 +152,11 @@
              (for/list ([subgoal-tactic inner]
                         [this-subgoal new-goals])
                (error-do refinement-error
-                 (<- this-refinement (subgoal-tactic (subgoal-obligation this-subgoal)))
-                 (pure (if (subgoal-relevant? this-subgoal)
+                 (let this-relevant? (subgoal-relevant? this-subgoal))
+                 (<- this-refinement (subgoal-tactic
+                                      ((if this-relevant? identity unhide-all)
+                                       (subgoal-obligation this-subgoal))))
+                 (pure (if this-relevant?
                            this-refinement
                            (refinement (refinement-new-goals this-refinement)
                                        (lambda exts #'(void))))))))

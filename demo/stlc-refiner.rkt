@@ -16,7 +16,7 @@
       (fail "Search depth exhausted")
       (apply first-success
              (append
-              (for/list ([h (range 0 5)]) (hypothesis h))
+              (for/list ([h (range 0 5)]) (assumption h))
               (list ;; addition is not here because it won't help me inhabit more types
                (int-intro 42)
                (string-intro "hej")
@@ -37,7 +37,7 @@
     (try (function-intro 'fnord))
     (addition 3)
     (int-intro 1)
-    (hypothesis 0)
+    (assumption 0)
     (int-intro 1)))
 
 ;; A tree-shaped tactic script, corresponding more closely to the goal
@@ -49,7 +49,7 @@
       (int-intro 1)
       (begin-tactics
         skip ;; start by doing nothing, just for the heck of it
-        (hypothesis 0))
+        (assumption 0))
       (int-intro 1))))
 
 (define/refiner another-test (--> Int (--> (--> Int String) String))
@@ -59,7 +59,7 @@
   (begin-tactics
     (function-intro 'str)
     length-of-string
-    (hypothesis 0)))
+    (assumption 0)))
 
 (module+ test
   (check-equal? (add-two 4)

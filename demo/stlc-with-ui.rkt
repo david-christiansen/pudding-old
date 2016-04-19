@@ -13,14 +13,14 @@
            (begin-tactics
              (function-intro 'x)
              length-of-string
-             (hypothesis 0))))
+             (assumption 0))))
   (define add-two
     (proof #'(--> Int Int)
            (begin-tactics
              (function-intro 'n)
              (addition 3)
              (int-intro 1)
-             (hypothesis 0)
+             (assumption 0)
              (int-intro 1)))))
 
 
@@ -31,7 +31,8 @@
 (module+ test
   (require rackunit)
 
-  (define test-input "(function-intro 'x)\nlength-of-string\n(hypothesis 0)\n")
+  (define test-input "(function-intro 'x)\nlength-of-string\n(assumption 0)\n")
+
   (check-equal?
    (with-input-from-string test-input
      (thunk* (with-output-to-string

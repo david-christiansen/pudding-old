@@ -258,4 +258,4 @@
                                   #,(new-scope extract 'add))))))]
     [other (refinement-fail 'function-intro other "Goal must be function type")]))
 
-;;; TODO: make the refinement rules dependent, then rewrite this!
+

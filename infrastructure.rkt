@@ -2,7 +2,9 @@
 
 (require (for-syntax syntax/parse) "error-handling.rkt")
 
-(provide (struct-out hypothetical)
+(provide (struct-out hypothesis)
+         (struct-out hypothetical)
+         unhide-all
          (struct-out refinement)
          (struct-out refinement-error)
          new-goal
@@ -24,6 +26,10 @@
 (module+ test
   (require rackunit))
 
+(struct hypothesis
+  (name assumption relevant?)
+  #:transparent)
+
 ;;; Contexts and such
 ;; hypotheses is an alist mapping identifiers to types, and goal is a type
 (struct hypothetical
@@ -35,6 +41,16 @@
     [(>> h g) #'(hypothetical h g)])
   (syntax-parser
     [(>> h g) #'(hypothetical h g)]))
+
+(define (unhide-all g)
+  (match g
+    [(>> hs goal)
+     (>> (map (lambda (h)
+                (hypothesis (hypothesis-name h)
+                            (hypothesis-assumption h)
+                            #t))
+              hs)
+         goal)]))
 
 (define (new-goal goal)
   (>> empty goal))
@@ -92,9 +108,10 @@
 (define (refinement-fail rule-name goal message)
   (failure (refinement-error rule-name goal message)))
 
-(define (identity-refinement goal)
-  (success (refinement (list goal)
-                       (lambda subterms
-                         (if (null? subterms)
-                             (error "the impossible happened")
-                             (car subterms))))))
+(define/contract (identity-refinement goal)
+  (-> subgoal? refinement?)
+  (refinement (list goal)
+              (lambda subterms
+                (if (null? subterms)
+                    (error "the impossible happened")
+                    (car subterms)))))
