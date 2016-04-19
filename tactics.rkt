@@ -8,11 +8,11 @@
 ;;; Executing tactics
 (define tactic-trace? (make-parameter #f))
 
-(define (pretty-sequent seq)
+(define (pretty-hypothetical seq)
   `(>> ,(map (lambda (x)
                (cons (syntax->datum (car x)) (syntax->datum (cdr x))))
-             (sequent-hypotheses seq))
-       ,(syntax->datum (sequent-goal seq))))
+             (hypothetical-hypotheses seq))
+       ,(syntax->datum (hypothetical-goal seq))))
 
 (define (goal-count r) (length (refinement-new-goals r)))
 
@@ -20,6 +20,7 @@
 (struct tactics-frame
   (extracts
    subgoals
+   relevant?
    extractor
    next))
 
@@ -27,7 +28,7 @@
 (define ((begin-tactics . tacs) goal)
   (let loop ([remaining-tactics tacs]
              [extracts empty]
-             [subgoals (list goal)]
+             [subgoals (list (relevant-subgoal goal))]
              [extractor (λ exts (if (cons? exts)
                                     (car exts)
                                     (error "The impossible happened!")))]
@@ -42,9 +43,10 @@
            (when (tactic-trace?)
              (printf "\tExtract was ~a\n\n" this-extract))
            (match next
-             [(tactics-frame old-extracts remaining-subgoals next-extractor next-next)
+             [(tactics-frame old-extracts remaining-subgoals relevant? next-extractor next-next)
               (loop remaining-tactics
-                    (cons this-extract old-extracts)
+                    (cons (if relevant? this-extract #'(void))
+                          old-extracts)
                     remaining-subgoals
                     next-extractor
                     next-next)]
@@ -56,13 +58,15 @@
                             "No more tactics, but unsolved goals remain")]
           [else
            (error-do refinement-error
+             (let this-subgoal (car subgoals))
              (<- (refinement new-subgoals new-extractor)
-                 ((car remaining-tactics) (car subgoals)))
+                 ((car remaining-tactics)
+                  (subgoal-obligation this-subgoal)))
              (loop (cdr remaining-tactics)
                    empty
                    new-subgoals
                    new-extractor
-                   (tactics-frame extracts (cdr subgoals) extractor next)))])))
+                   (tactics-frame extracts (cdr subgoals) (subgoal-relevant? this-subgoal) extractor next)))])))
 
 ;; Attempt to prove goal completely using rule
 (define (proof goal rule)
@@ -89,7 +93,7 @@
 
 ;; A tactic that does nothing
 (define (skip goal)
-  (identity-refinement goal))
+  (identity-refinement (relevant-subgoal goal)))
 
 (define ((trace message) goal)
   (displayln message)
@@ -127,28 +131,35 @@
                               (apply (refinement-extraction r) e)))
                           (apply ext subgoal-extracts)))))]))
 
-;; Like JonPRL's ; with square brackets
+;;; Run outer. Each of its subgoals must have a corresponding tactic
+;;; in inner that does not fail. The resulting subgoals are those
+;;; induced by the tactics, appended.
 (define ((with-subgoals outer . inner) goal)
   (error-do refinement-error
     (<- outer-res (outer goal))
     (match outer-res
-     [(refinement new-goals extractor) #:when (= (length new-goals) (length inner))
-      (error-do refinement-error
-        (let potential-subgoal-refinements
+      [(refinement new-goals extractor) #:when (= (length new-goals) (length inner))
+       (error-do refinement-error
+         (let potential-subgoal-refinements
              (for/list ([subgoal-tactic inner]
                         [this-subgoal new-goals])
-               (subgoal-tactic this-subgoal)))
-        (<- subgoal-refinements (all-success potential-subgoal-refinements))
-        (let subgoal-counts (map goal-count
-                                 subgoal-refinements))
-        (pure
-         (refinement (append* (map refinement-new-goals subgoal-refinements))
-                     (λ extraction-args
-                       (let ([subgoal-extracts
-                              (map (λ (r e)
-                                     (apply (refinement-extraction r) e))
-                                   subgoal-refinements
-                                   (list-split extraction-args subgoal-counts))])
-                         (apply extractor subgoal-extracts))))))]
-     [_ (refinement-fail 'subgoals goal "mismatched subgoal count")])))
+               (error-do refinement-error
+                 (<- this-refinement (subgoal-tactic (subgoal-obligation this-subgoal)))
+                 (pure (if (subgoal-relevant? this-subgoal)
+                           this-refinement
+                           (refinement (refinement-new-goals this-refinement)
+                                       (lambda exts #'(void))))))))
+         (<- subgoal-refinements (all-success potential-subgoal-refinements))
+         (let subgoal-counts (map goal-count
+                                  subgoal-refinements))
+         (pure
+          (refinement (append* (map refinement-new-goals subgoal-refinements))
+                      (λ extraction-args
+                        (let ([subgoal-extracts
+                               (map (λ (r e)
+                                      (apply (refinement-extraction r) e))
+                                    subgoal-refinements
+                                    (list-split extraction-args subgoal-counts))])
+                          (apply extractor subgoal-extracts))))))]
+      [_ (refinement-fail 'subgoals goal "mismatched subgoal count")])))
 

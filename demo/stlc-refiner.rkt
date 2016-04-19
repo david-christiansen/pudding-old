@@ -30,7 +30,6 @@
                  (squish (- depth 1))))))))
 
 ;; A linear tactic script, dispatching subgoals as they arise
-
 (define/refiner add-two (--> Int Int)
   (begin-tactics
     (function-intro 'n)
@@ -43,6 +42,7 @@
 
 ;; A tree-shaped tactic script, corresponding more closely to the goal
 ;; structure
+
 (define/refiner add-2 (--> Int Int)
   (with-subgoals (function-intro 'n)
     (with-subgoals (addition 3)
@@ -67,6 +67,7 @@
 
   (check-equal? (add-2 17)
                 19)
+
 
   (check-equal? ((another-test 2) (lambda (x) "hi"))
                 "hej")

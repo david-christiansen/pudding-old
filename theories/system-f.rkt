@@ -156,7 +156,7 @@
 (define/contract (hypothesis num)
   (-> natural-number/c rule/c)
   (match-lambda
-    [(sequent hypotheses goal)
+    [(hypothetical hypotheses goal)
      (if (< num (length hypotheses))
          (match-let ([(cons id hyp) (list-ref hypotheses num)])
            (if (hypothesis-proves? hyp goal)
@@ -179,7 +179,7 @@
 ;;; Rules for building types
 (define/contract Int-f rule/c
   (match-lambda
-    [(sequent _ (judgment is-type))
+    [(hypothetical _ (judgment is-type))
      (done-refining #'Int)]
     [other (refinement-fail 'Int-f
                             other
@@ -187,7 +187,7 @@
 
 (define/contract String-f rule/c
   (match-lambda
-    [(sequent _ (judgment is-type))
+    [(hypothetical _ (judgment is-type))
      (done-refining #'String)]
     [other (refinement-fail 'String-f
                             other
@@ -195,11 +195,11 @@
 
 (define/contract Fun-f rule/c
   (match-lambda
-    [(sequent hyps (judgment is-type))
+    [(hypothetical hyps (judgment is-type))
      (success
       (refinement
-       (list (>> hyps (judgment is-type))
-             (>> hyps (judgment is-type)))
+       (list (relevant-subgoal (>> hyps (judgment is-type)))
+             (relevant-subgoal (>> hyps (judgment is-type))))
        (lambda (dom cod)
          #`(→ #,dom #,cod))))]
     [other (refinement-fail 'String-f
@@ -213,10 +213,11 @@
      (let* ([new-scope (make-syntax-introducer)]
             [annotated-name (new-scope (datum->syntax #f α) 'add)])
        (success
-        (refinement (list (>> (cons (cons annotated-name
-                                          (judgment is-type))
-                                    hyps)
-                              (judgment is-type)))
+        (refinement (list (relevant-subgoal
+                           (>> (cons (cons annotated-name
+                                           (judgment is-type))
+                                     hyps)
+                               (judgment is-type))))
                     (lambda (ext)
                       (type (∀ annotated-name
                                (new-scope ext 'add)))))))]
@@ -248,8 +249,10 @@
     [(>> hyps (type (→ τ σ)))
      (let* ([new-scope (make-syntax-introducer)]
             [annotated-name (new-scope (datum->syntax #f x) 'add)])
-       (success (refinement (list (>> (cons (cons annotated-name τ)
-                                            hyps)))
+       (success (refinement (list (relevant-subgoal
+                                   (>> (cons (cons annotated-name τ)
+                                             hyps)
+                                       σ)))
                             (lambda (extract)
                               #`(lambda (#,annotated-name)
                                   #,(new-scope extract 'add))))))]

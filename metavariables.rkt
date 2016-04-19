@@ -29,8 +29,7 @@
                [syntax-contains-metavariable?
                 (-> syntax? boolean?)]
                [instantiate-metavariables
-                (-> metavariable-context? syntax? syntax?)])
- )
+                (-> metavariable-context? syntax? syntax?)]))
 
 (module+ test
   (require rackunit))

@@ -67,7 +67,7 @@
 (define/contract (hypothesis num)
   (-> natural-number/c rule/c)
   (match-lambda
-    [(sequent hypotheses goal)
+    [(hypothetical hypotheses goal)
      (if (< num (length hypotheses))
          (match-let ([(cons id type) (list-ref hypotheses num)])
            (if (type=? type goal)
@@ -95,22 +95,22 @@
 
 (define/contract (addition arg-count)
   (-> natural-number/c rule/c)
-  (lambda (sequent)
-    (match sequent
+  (lambda (hypothetical)
+    (match hypothetical
       [(>> hypotheses (type Int))
        (success
         (refinement (build-list arg-count
-                                (thunk* (>> hypotheses (type Int))))
+                                (thunk* (relevant-subgoal (>> hypotheses (type Int)))))
                     (lambda arguments
                       (datum->syntax #'here (cons #'+ arguments)))))]
       [other (refinement-fail 'arg-count other "goal type must be Int")])))
 
-(define/contract (length-of-string sequent) rule/c
-  (match sequent
+(define/contract (length-of-string hypothetical) rule/c
+  (match hypothetical
     [(>> hypotheses (type Int))
      (success
       (refinement
-       (list (>> hypotheses (type String)))
+       (list (relevant-subgoal (>> hypotheses (type String))))
        (lambda (argument)
          #`(string-length #,argument))))]
     [other
@@ -132,10 +132,11 @@
      (let* ([new-scope (make-syntax-introducer)]
             [annotated-name (new-scope (datum->syntax #f x) 'add)])
        (success
-        (refinement (list (>> (cons (cons annotated-name
-                                          dom)
-                                    hyps)
-                              cod))
+        (refinement (list (relevant-subgoal
+                           (>> (cons (cons annotated-name
+                                           dom)
+                                     hyps)
+                               cod)))
                     (lambda (extract)
                       #`(lambda (#,annotated-name)
                           #,(new-scope extract 'add))))))]
@@ -148,8 +149,8 @@
   (match proof-goal
     [(>> hypotheses goal)
      (refinement
-      (list (>> hypotheses #`(--> #,dom #,goal))
-            (>> hypotheses dom))
+      (list (relevant-subgoal (>> hypotheses #`(--> #,dom #,goal)))
+            (relevant-subgoal (>> hypotheses dom)))
       (lambda (fun arg)
         #`(#,fun #,arg)))]))
 

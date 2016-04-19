@@ -2,7 +2,7 @@
 
 (require (for-syntax syntax/parse) "error-handling.rkt")
 
-(provide (struct-out sequent)
+(provide (struct-out hypothetical)
          (struct-out refinement)
          (struct-out refinement-error)
          new-goal
@@ -10,30 +10,59 @@
          >>
          refinement-fail
          identity-refinement
-         rule/c)
+         rule/c
+
+         ;;; Subgoals
+         relevant-subgoal
+         irrelevant-subgoal
+         named-subgoal
+         subgoal?
+         subgoal-obligation
+         named-subgoal-name
+         subgoal-relevant?)
 
 (module+ test
   (require rackunit))
 
 ;;; Contexts and such
 ;; hypotheses is an alist mapping identifiers to types, and goal is a type
-(struct sequent
+(struct hypothetical
   (hypotheses goal)
   #:transparent)
 
 (define-match-expander >>
   (syntax-parser
-    [(>> h g) #'(sequent h g)])
+    [(>> h g) #'(hypothetical h g)])
   (syntax-parser
-    [(>> h g) #'(sequent h g)]))
+    [(>> h g) #'(hypothetical h g)]))
 
-(define (new-goal type) (>> empty type))
+(define (new-goal goal)
+  (>> empty goal))
 
 (module+ test
   (check-equal? #t
                 (match (new-goal #'15)
                   [(>> (list) (app syntax-e 15)) #t]
                   [_ #t])))
+
+(struct irrelevant-subgoal (obligation) #:transparent)
+(struct relevant-subgoal (obligation) #:transparent)
+(struct named-subgoal (name obligation) #:transparent)
+
+(define (subgoal? x)
+  (or (irrelevant-subgoal? x)
+      (relevant-subgoal? x)
+      (named-subgoal? x)))
+
+(define (subgoal-obligation subgoal)
+  (match subgoal
+    [(irrelevant-subgoal o) o]
+    [(relevant-subgoal o) o]
+    [(named-subgoal n o) o]))
+
+(define (subgoal-relevant? g)
+  (or (relevant-subgoal? g)
+      (named-subgoal? g)))
 
 ;;; Refinement infrastructure
 ;;
@@ -57,7 +86,7 @@
   (rule-name goal message)
   #:transparent)
 
-(define rule/c (-> sequent? (or/c failure? success?)))
+(define rule/c (-> hypothetical? (or/c failure? success?)))
 
 
 (define (refinement-fail rule-name goal message)
