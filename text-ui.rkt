@@ -32,12 +32,12 @@
   (with-handlers ([exn:fail? (lambda (e)
                                ((display-error "Exception during refinement:") e)
                                (retry))])
-    (with-fallbacks refinement-error
-      ([refinement-error? (lambda (e)
-                            ((display-error "Refinement failed:")
-                             (exn:fail (refinement-error-message e)
-                                       (current-continuation-marks)))
-                            (retry))])
+    (with-fallbacks ([refinement-error?
+                      (lambda (e)
+                        ((display-error "Refinement failed:")
+                         (exn:fail (refinement-error-message e)
+                                   (current-continuation-marks)))
+                        (retry))])
       (let* ([input (read)])
         (if (equal? input ':q)
             (begin (printf "Exiting, proof incomplete\n") (exit 0))

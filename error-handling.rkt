@@ -44,18 +44,7 @@
          (match res
            [(success val) val]
            [(failure reason)
-            (fallbacks reason  (cons pred handler) ...)]
-           [other
-            (raise-arguments-error 'with-fallbacks
-                                   "Not a success or failure"
-                                   "result"
-                                   other)]))]
-    [(with-fallbacks error-type ([pred handler] ...) body ...)
-     #'(let ([res (begin body ...)])
-         (match res
-           [(success val) val]
-           [(failure reason)
-            (fallbacks reason  (cons pred handler) ...)]
+            (fallbacks reason (cons pred handler) ...)]
            [other
             (raise-arguments-error 'with-fallbacks
                                    "Not a success or failure"
