@@ -6,6 +6,10 @@
  context-with-uninstantiated-variable/c
  (contract-out [metavariable?
                 (-> any/c boolean?)]
+               [uninstantiated?
+                (-> any/c boolean?)]
+               [instantiated?
+                (-> any/c boolean?)]
                [metavariable-context?
                 (-> any/c boolean?)]
                [fresh-context

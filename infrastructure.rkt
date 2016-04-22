@@ -1,6 +1,6 @@
 #lang racket
 
-(require (for-syntax syntax/parse) "error-handling.rkt")
+(require (for-syntax syntax/parse) "error-handling.rkt" "metavariables.rkt")
 
 (provide (struct-out hypothesis)
          (struct-out hypothetical)
@@ -86,11 +86,17 @@
 ;;
 ;; extraction should be a function from the new-goals' extracts to an extract
 (struct refinement
-  (new-goals extraction)
+  (new-goals extraction metavariables)
   #:transparent)
 
+(begin-for-syntax
+ (define-syntax-class subgoal
+   ))
+
+
+
 (define (done-refining term)
-  (success (refinement empty (lambda _ term))))
+  (success (refinement empty (lambda _ term) (fresh-context))))
 
 (module+ test
   (check-equal? (syntax-e ((refinement-extraction

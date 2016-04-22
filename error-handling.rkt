@@ -4,84 +4,189 @@
          racket/stxparam
          "monad-notation.rkt")
 
-(provide all-success pure error-do <- with-fallbacks
-         (struct-out success)
-         (struct-out failure))
+(provide
+ ;; Re-exported monad stuff
+ pure <-
+ ;; The proof monad
+ proof
+ proof-fail
+ proof-run
+ proof-eval
+ proof-get proof-put proof-modify
+ proof-chain-list
+ define/proof
+ (struct-out success)
+ (struct-out failure))
 
 (module+ test
   (require rackunit))
 
-(struct success (value) #:transparent)
+;;; The proof monad is a state-and-error monad.  Values are functions
+;;; that take a proof state and produce either a pair of a success
+;;; value and a new state or a failure with an error.
+;;;
+;;; In other words, failure undoes any changes to the state.
+
+(struct success (value state) #:transparent)
 (struct failure (reason) #:transparent)
 
-(define (err-bind val f)
-  (if (success? val)
-      (f (success-value val))
-      val))
+(define (proof-fail reason)
+  (lambda (state)
+    (failure reason)))
 
-(define-syntax (error-do stx)
-  (syntax-parse stx
-    [(_ error-type:expr steps:expr ... last:expr)
-     (syntax/loc stx
-       (syntax-parameterize ([current-monad #'(Err error-type)]
-                             [current-pure #'success])
-         (do-impl err-bind steps ... last)))]))
+(define (proof-pure val)
+  (lambda (state)
+    (success val state)))
 
+(define (proof-bind x k)
+  (lambda (old-state)
+    (match (x old-state)
+      [(failure reason) (failure reason)]
+      [(success val new-state)
+       ((k val) new-state)])))
 
-(define (fallbacks failure-reason . handlers)
-  (cond [(null? handlers)
-         (raise-arguments-error 'with-fallbacks
-                                "No fallback procedure for failure"
-                                "failure" failure)]
-        [((caar handlers) failure-reason)
-         ((cdar handlers) failure-reason)]
-        [else (apply fallbacks failure-reason (cdr handlers))]))
+(struct exn:fail:not-exn exn:fail (reason)
+  #:extra-constructor-name make-exn:fail:not-exn
+  #:transparent)
 
-(define-syntax (with-fallbacks stx)
-  (syntax-parse stx
-    [(with-fallbacks ([pred handler] ...) body ...)
-     #'(let ([res (begin body ...)])
-         (match res
-           [(success val) val]
-           [(failure reason)
-            (fallbacks reason (cons pred handler) ...)]
-           [other
-            (raise-arguments-error 'with-fallbacks
-                                   "Not a success or failure"
-                                   "result"
-                                   other)]))]))
+(define (proof-run program state)
+  (match (program state)
+    [(success out new-state)
+     (values out new-state)]
+    [(failure reason)
+     (if (exn? reason)
+         (raise reason)
+         (raise (make-exn:fail:not-exn
+                 "Not an exception"
+                 (current-continuation-marks) reason)))]))
 
-
-;;; TODO: make something better here, like for/success-list
-(define (all-success lst)
-  (if (null? lst)
-      (success '())
-      (error-do E
-        (<- head (car lst))
-        (<- tail (all-success (cdr lst)))
-        (pure (cons head tail)))))
+(define (proof-eval program state)
+  (call-with-values (thunk (proof-run program state))
+                    (lambda (result new-state)
+                      result)))
 
 
 (module+ test
-  (test-begin
-    (define (head lst)
-      (if (cons? lst)
-          (success (car lst))
-          (failure "empty list")))
+  (check-equal? ((proof-pure 3) (void))
+                (success 3 (void)))
+  (check-equal? ((proof-bind
+                  (proof-pure 3)
+                  (lambda (x)
+                    (proof-bind
+                     (proof-pure 2)
+                     (lambda (y)
+                       (proof-pure (+ x y))))))
+                 (void))
+                (success 5 (void))))
 
-    (check-equal? (error-do String
-                    (<- x (head (list 1 2 3)))
-                    (<- y (head (list 3 4 5)))
-                    (success (+ x y)))
-                  (success 4))
-    (check-equal? (error-do String
-                    (<- x (head '(1 2 3)))
-                    (<- y (head '()))
-                    (success (+ x y)))
-                  (failure "empty list"))
-    (check-equal? (with-fallbacks ([false? (lambda (_) 1)] [string? string-length])
-                    (error-do String
-                        (<- x (head '(1 2 3)))
-                        (<- y (head '()))
-                      (success (+ x y))))
-                  10)))
+
+(define (proof-get state)
+  (success state state))
+
+(define (proof-put new-state)
+  (lambda (old-state)
+    (success (void) new-state)))
+
+(module+ test
+  (check-equal?
+   ((proof-bind
+     proof-get
+     (lambda (x)
+       (proof-bind
+        (proof-put (+ x 1))
+        (lambda (whatever)
+          (proof-pure "done")))))
+    0)
+   (success "done" 1)))
+
+(define-syntax (proof stx)
+  (syntax-parse stx
+    [(_ steps:expr ... last:expr)
+     (syntax/loc stx
+       (syntax-parameterize ([current-pure #'proof-pure])
+         (do-impl proof-bind steps ... last)))]))
+
+(module+ test
+  (check-equal? (call-with-values
+                 (thunk
+                  (proof-run (proof
+                              (<- x (pure 13))
+                              (<- y (pure 23))
+                              (<- s proof-get)
+                              (proof-put (* s y))
+                              (pure (+ x y)))
+                             5))
+                 list)
+                (list 36 115)))
+
+(define (proof-modify f)
+  (proof (<- st proof-get)
+         (proof-put (f st))))
+
+(module+ test
+  (check-equal? (call-with-values
+                 (thunk (proof-run (proof (proof-modify add1)
+                                          (proof-modify add1)
+                                          (pure 7))
+                                   2))
+                 cons)
+                (cons 7 4)))
+
+(define-syntax (handle-errors stx)
+  (syntax-parse stx
+    [(_ program (handler-pattern rhs ...) ...)
+     #'(lambda (old-state)
+         (match (program old-state)
+           [(success val new-state)
+            (success val new-state)]
+           [(failure reason)
+            (match reason
+              [handler-pattern ((proof rhs ...) old-state)]
+              ...
+              [other ((proof-fail other) old-state)])]))]))
+
+(define-syntax (define/proof stx)
+  (syntax-parse stx
+    [(_ name:id body ... )
+     #'(define name (proof body ...))]
+    [(_ (name:id param:expr ...) body ...)
+     #'(define (name param ...)
+         (proof body ...))]))
+
+(module+ test
+  (define/proof (>5 x)
+    (if (> x 5)
+        (pure x)
+        (proof-fail "No way")))
+  (define/proof (tester x)
+    (handle-errors (proof (<- y (>5 x))
+                          (pure y))
+                   ["No way" (proof-fail #f)]))
+  (check-equal? ((tester 1) (void)) (failure #f))
+  (check-equal? ((tester 5) (void)) (failure #f))
+  (check-equal? ((tester 6) (void)) (success 6 (void))))
+
+(define (proof-chain-list lst)
+  (cond
+    [(null? lst)
+     (proof-pure lst)]
+    [(pair? lst)
+     (proof (<- hd (car lst))
+            (<- tl (proof-chain-list (cdr lst)))
+            (proof-pure (cons hd tl)))]))
+
+(module+ test
+  (check-equal? ((proof-chain-list (list (proof-pure 1)
+                                         (proof-fail "no")
+                                         (proof-pure 2)))
+                 5)
+                (failure "no"))
+  (check-equal? ((proof-chain-list (list (proof-pure 1)
+                                         (proof-pure 2)))
+                 5)
+                (success '(1 2) 5)))
+
+
+
+
+

@@ -1,10 +1,10 @@
 #lang racket
 
 (require (for-syntax racket syntax/parse)
-         "monad-notation-parameters.rkt"
+         (only-in "monad-notation-parameters.rkt" current-pure <-)
          racket/stxparam)
 
-(provide do-impl define-do current-monad current-pure pure <-)
+(provide do-impl define-do current-pure pure <-)
 
 (module+ test (require typed/rackunit))
 
@@ -23,7 +23,11 @@
   (define-syntax-class do-let
     #:literals (let)
     #:description "let in do"
-    (pattern (let pattern:expr term:expr))))
+    (pattern (let pattern:expr term:expr)))
+  (define-syntax-class do-let-values
+    #:literals (let-values)
+    #:description "let-values in do"
+    (pattern (let-values (patterns:expr ...) term:expr))))
 
 
 (define-syntax (do-impl stx)
@@ -39,12 +43,15 @@
      (quasisyntax/loc (syntax to-let)
        (match-let ([to-let.pattern to-let.term])
          (do-impl bind-op body ...)))]
+    [(_ bind-op to-let:do-let-values body:expr ...)
+     (quasisyntax/loc (syntax to-let)
+       (match-let-values ([(to-let.patterns ...) to-let.term])
+         (do-impl bind-op body ...)))]
     [(_ bind-op first:expr rest:expr ...)
-     (let ([m (syntax-parameter-value #'current-monad)])
-       (quasisyntax/loc (syntax first)
-         (bind-op first
-                  (lambda (ignored)
-                    (do-impl bind-op rest ...)))))]))
+     (quasisyntax/loc (syntax first)
+       (bind-op first
+                (lambda (ignored)
+                  (do-impl bind-op rest ...))))]))
 
 (define-syntax (define-do stx)
   (syntax-parse stx
@@ -52,9 +59,7 @@
      #'(define-syntax (kwd inner)
          (syntax-parse inner
            [(_ x:expr (... ...))
-            #'(syntax-parameterize ([current-monad
-                                     #'monad]
-                                    [current-pure
+            #'(syntax-parameterize ([current-pure
                                      #'pure-op])
                (do-impl bind x (... ...)))]))]))
 
@@ -105,8 +110,7 @@
   (define-syntax (state-do stx)
     (syntax-parse stx
       [(_ state-type:expr steps:expr ... last:expr)
-       (syntax/loc stx (syntax-parameterize ([current-monad #'(State state-type)]
-                                             [current-pure #'state-pure])
+       (syntax/loc stx (syntax-parameterize ([current-pure #'state-pure])
                           (do-impl state->>= steps ... last)))]))
 
   (define (modify f)
@@ -143,8 +147,7 @@
   (define-syntax (error-do stx)
     (syntax-parse stx
       [(_ error-type:expr steps:expr ... last:expr)
-       (syntax/loc stx (syntax-parameterize ([current-monad #'(Error error-type)]
-                                             [current-pure #'success])
+       (syntax/loc stx (syntax-parameterize ([current-pure #'success])
                           (do-impl error->>= steps ... last)))]))
 
   (define (all-success lst)
