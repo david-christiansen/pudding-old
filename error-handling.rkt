@@ -15,6 +15,8 @@
  proof-get proof-put proof-modify
  proof-chain-list
  define/proof
+ for/proof/list
+ for*/proof/list
  (struct-out success)
  (struct-out failure))
 
@@ -186,7 +188,71 @@
                  5)
                 (success '(1 2) 5)))
 
+(define (ap-proof proc arg)
+  (proof (<- f proc)
+         (<- x arg)
+         (pure (f x))))
+
+(define (ap-proof-2 proc arg1 arg2)
+  (proof (<- f proc)
+         (<- x arg1)
+         (<- y arg2)
+         (pure (f x y))))
+
+(define ((lift-proof proc) arg)
+  (proof (<- x arg)
+         (pure (proc x))))
+
+(define ((lift-proof-2 proc) arg1 arg2)
+  (proof (<- x arg1)
+         (<- y arg2)
+         (pure (proc x y))))
 
 
+(define-syntax (for/proof/list stx)
+  (syntax-parse stx
+    [(_ clauses steps ...)
+     (with-syntax ([orig stx])
+       #'(proof (<- backwards (for/fold/derived
+                               orig ([acc (proof (pure '()))])
+                               clauses
+                               (proof (<- tl acc)
+                                      (<- hd (proof steps ...))
+                                      (pure (cons hd tl)))))
+                (pure (reverse backwards))))]))
 
+(module+ test
+  (check-equal? (proof-eval (for/proof/list
+                             ([x '(1 2 3 4 5)]
+                              [y '(a b c d)])
+                             (<- z proof-get)
+                             (proof-put (* z 2))
+                             (pure (list x y z)))
+                            1)
+                '((1 a 1) (2 b 2) (3 c 4) (4 d 8))))
 
+(define-syntax (for*/proof/list stx)
+  (syntax-parse stx
+    [(_ clauses steps ...)
+     (with-syntax ([orig stx])
+         #'(proof (<- backwards (for*/fold/derived
+                                 orig ([acc (proof (pure '()))])
+                                 clauses
+                                 (proof (<- tl acc)
+                                        (<- hd (proof steps ...))
+                                        (pure (cons hd tl)))))
+                  (pure (reverse backwards))))]))
+
+(module+ test
+  (check-equal? (proof-eval (for*/proof/list
+                             ([x '(1 2 3 4 5)]
+                              [y '(a b c d)])
+                             (<- z proof-get)
+                             (proof-put (* z 2))
+                             (pure (list x y z)))
+                            1)
+                '((1 a 1)     (1 b 2)      (1 c 4)      (1 d 8)
+                  (2 a 16)    (2 b 32)     (2 c 64)     (2 d 128)
+                  (3 a 256)   (3 b 512)    (3 c 1024)   (3 d 2048)
+                  (4 a 4096)  (4 b 8192)   (4 c 16384)  (4 d 32768)
+                  (5 a 65536) (5 b 131072) (5 c 262144) (5 d 524288))))

@@ -1,30 +1,82 @@
 #lang racket
+(require "infrastructure.rkt")
+(require zippers)
 
-(provide (struct-out complete-proof)
-         (rename-out [complete-proof? completed?]))
+(require (for-syntax syntax/parse))
 
-;;; We have one kind of complete proof. Note that all sub-proofs must
-;;; be complete here.
+(provide (struct-out dependent-subgoal)
+         (struct-out irrelevant-subgoal)
+         (struct-out subgoal)
+         (struct-out complete-proof)
+         (struct-out refined-step)
+         (struct-zipper-out
+          dependent-subgoal
+          irrelevant-subgoal
+          subgoal
+          complete-proof
+          refined-step)
+         steps)
 
-(struct complete-proof (type rule extract sub-proofs) #:transparent)
+(module+ test
+  (require rackunit))
 
-;;;; Incomplete proofs come in a few kinds of node
+;;; A subgoal that is waiting on something else. The waiting-for field
+;;; contains a metavariable. When that metavariable is instantiated,
+;;; the goal can be accessed by applying the procedure in next to the
+;;; instantiation.
+(struct dependent-subgoal (waiting-for next) #:transparent)
 
-;;; Nodes that are ready to be refined have a flag indicating whether
-;;; their result is computationally relevant as well as a goal
-(struct ready (relevant? goal) #:transparent)
+;;; An irrelevant subgoal. Hidden hypotheses will be made visible
+;;; here, but it will not contribute an extract.
+(struct irrelevant-subgoal (goal) #:transparent)
 
-;;; Nodes that are blocked on a metavariable identify the variable and
-;;; provide a means of constructing a new incomplete proof based on
-;;; that. todo should be a Racket procedure for constructing either a
-;;; ready or a blocked, given the extract of the named variable.
-(struct blocked (name todo) #:transparent)
-
-;;; When a ready node is refined, we store the original relevance flag
-;;; and goal, the tactic used to refine it, the extraction procedure,
-;;; and the subgoals as either complete or partial proofs.
-(struct refined (relevant? goal tactic extraction subgoals))
+;;; An ordinary subgoal that's ready to be attacked. The name can
+;;; appear at the head of dependent subgoals.
+(struct subgoal (name goal) #:transparent)
 
 
+;;; Complete proofs are those in which a rule has been applied and all
+;;; subgoals have become complete-proofs.
+(struct complete-proof (goal rule extract children) #:transparent)
+
+
+;;; Refined nodes are not yet complete, but progress has been
+;;; made. The children can be either subgoals, refined steps, or
+;;; complete proofs.
+(struct refined-step (goal rule children extractor) #:transparent)
+
+
+(define-struct-zipper-frames
+  dependent-subgoal
+  irrelevant-subgoal
+  subgoal
+  complete-proof refined-step)
+
+
+;;; Clojure-style threading macro, with explicit binding for clarity
+;;; and flexibility
+(define-syntax (steps stx)
+  (syntax-parse stx
+    [(_ last-step:expr (x:id))
+     #'last-step]
+    [(_ current:expr (x:id) next-step:expr more-steps:expr ...)
+     (syntax/loc stx
+       (steps ((lambda (x)
+                 next-step)
+               current)
+              (x)
+              more-steps ...))]))
+
+(module+ test
+  (check-equal? (steps "a string!" (x)
+                  (string-append x (list->string (reverse (string->list x))))
+                  (string-append x x))
+                "a string!!gnirts aa string!!gnirts a")
+  (check-equal? (steps (zip '(a b c)) (x)
+                  (down/cdr x)
+                  (edit reverse x)
+                  (edit (lambda (y) (cons "hi" y)) x)
+                  (rebuild x))
+                '(a "hi" c b)))
 
 

@@ -11,17 +11,7 @@
          done-refining
          >>
          refinement-fail
-         identity-refinement
-         rule/c
-
-         ;;; Subgoals
-         relevant-subgoal
-         irrelevant-subgoal
-         named-subgoal
-         subgoal?
-         subgoal-obligation
-         named-subgoal-name
-         subgoal-relevant?)
+         rule/c)
 
 (module+ test
   (require rackunit))
@@ -61,38 +51,14 @@
                   [(>> (list) (app syntax-e 15)) #t]
                   [_ #t])))
 
-(struct irrelevant-subgoal (obligation) #:transparent)
-(struct relevant-subgoal (obligation) #:transparent)
-(struct named-subgoal (name obligation) #:transparent)
-
-(define (subgoal? x)
-  (or (irrelevant-subgoal? x)
-      (relevant-subgoal? x)
-      (named-subgoal? x)))
-
-(define (subgoal-obligation subgoal)
-  (match subgoal
-    [(irrelevant-subgoal o) o]
-    [(relevant-subgoal o) o]
-    [(named-subgoal n o) o]))
-
-(define (subgoal-relevant? g)
-  (or (relevant-subgoal? g)
-      (named-subgoal? g)))
-
 ;;; Refinement infrastructure
 ;;
 ;; 
 ;;
 ;; extraction should be a function from the new-goals' extracts to an extract
 (struct refinement
-  (new-goals extraction metavariables)
+  (new-goals extraction)
   #:transparent)
-
-(begin-for-syntax
- (define-syntax-class subgoal
-   ))
-
 
 
 (define (done-refining term)
@@ -114,10 +80,4 @@
 (define (refinement-fail rule-name goal message)
   (failure (refinement-error rule-name goal message)))
 
-(define/contract (identity-refinement goal)
-  (-> subgoal? refinement?)
-  (refinement (list goal)
-              (lambda subterms
-                (if (null? subterms)
-                    (error "the impossible happened")
-                    (car subterms)))))
+

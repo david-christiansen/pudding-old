@@ -49,6 +49,9 @@
      (write-string "›" port))])
 
 (module+ test
+  ;; Metavariables are metavariables
+  (check-true (metavariable? (metavariable 'x)))
+
   ;; Two metavariables with the same symbol should not be equal?
   (check-not-equal? (metavariable 'x) (metavariable 'x))
 
