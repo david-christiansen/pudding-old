@@ -1,9 +1,15 @@
 #lang racket
 
-(require "infrastructure.rkt" "error-handling.rkt")
+(require zippers)
 
-(provide begin-for-subgoals begin-tactics fail first-success proof
-         skip with-subgoals tactic-trace? trace try)
+(require "infrastructure.rkt" "error-handling.rkt" "proofs.rkt" "proof-state.rkt" "monad-notation.rkt")
+
+(provide begin-for-subgoals first-success proof <- pure
+         skip with-subgoals tactic-trace? trace try
+         prove)
+
+(module+ test
+  (require rackunit))
 
 ;;; Executing tactics
 (define tactic-trace? (make-parameter #f))
@@ -14,99 +20,22 @@
              (hypothetical-hypotheses seq))
        ,(syntax->datum (hypothetical-goal seq))))
 
-(define (goal-count r) (length (refinement-new-goals r)))
+(define/proof skip
+  (pure (void)))
 
-;; A zipper into an executing refinement tree
-(struct tactics-frame
-  (extracts
-   subgoals
-   relevant?
-   extractor
-   next))
-
-;; A tactic script succeeds if it complete dispatches its subgoal
-(define ((begin-tactics . tacs) goal)
-  (let loop ([remaining-tactics tacs]
-             [extracts empty]
-             [subgoals (list (relevant-subgoal goal))]
-             [extractor (λ exts (if (cons? exts)
-                                    (car exts)
-                                    (error "The impossible happened!")))]
-             [next #f])
-    (when (tactic-trace?)
-      (displayln "---- TACTIC STATE ----")
-      (printf "\tRemaining tactics: ~a\n\tGoals:~a\n\n" remaining-tactics subgoals))
-
-    (cond [(null? subgoals)
-           (define this-extract
-             (apply extractor (reverse extracts)))
-           (when (tactic-trace?)
-             (printf "\tExtract was ~a\n\n" this-extract))
-           (match next
-             [(tactics-frame old-extracts remaining-subgoals relevant? next-extractor next-next)
-              (loop remaining-tactics
-                    (cons (if relevant? this-extract #'(void))
-                          old-extracts)
-                    remaining-subgoals
-                    next-extractor
-                    next-next)]
-             [#f (done-refining this-extract)])]
-
-          [(null? remaining-tactics)
-           (refinement-fail 'tactics
-                            (car subgoals)
-                            "No more tactics, but unsolved goals remain")]
-          [else
-           (error-do refinement-error
-             (let this-subgoal (car subgoals))
-             (let this-relevant? (subgoal-relevant? this-subgoal))
-             (<- (refinement new-subgoals new-extractor)
-                 ((car remaining-tactics)
-                  ((if this-relevant? identity unhide-all)
-                   (subgoal-obligation this-subgoal))))
-             (loop (cdr remaining-tactics)
-                   empty
-                   new-subgoals
-                   new-extractor
-                   (tactics-frame extracts
-                                  (cdr subgoals)
-                                  this-relevant?
-                                  extractor
-                                  next)))])))
-
-;; Attempt to prove goal completely using rule
-(define (proof goal rule)
-  (match (rule (new-goal goal))
-    [(success (refinement (list) ext))
-     (ext)]
-    [(success other)
-     (raise-result-error 'proof "complete proof" other)]
-    [(failure (refinement-error rule-name bad-goal message))
-     (raise-user-error "Error during proof" rule-name bad-goal message)]))
-
-;;; A tactic, like a rule, is a function from a goal to a refinement.
-
-(define ((first-success . rules) goal)
-  (if (cons? rules)
-      (match ((car rules) goal)
-        [(? success? x) x]
-        [(? failure? x) ((apply first-success (cdr rules)) goal)])
-      (refinement-fail 'first-success goal "Alternatives exhausted.")))
+(define (first-success . tacs)
+  (if (pair? tacs)
+      (handle-errors (car tacs)
+        [_ (apply first-success (cdr tacs))])
+      (proof-fail "Alternatives exhausted.")))
 
 (define (try tactic)
   (first-success tactic
                  skip))
 
-;; A tactic that does nothing
-(define (skip goal)
-  (success (identity-refinement (relevant-subgoal goal))))
-
-(define ((trace message) goal)
+(define (trace message)
   (displayln message)
-  (skip goal))
-
-(define ((fail [message "Failed"]) goal)
-  (refinement-fail 'fail goal message))
+  skip)
 
 (define (list-split lst lengths)
   (if (null? lengths)
@@ -118,59 +47,58 @@
 
 ;; Like Coq's ; tactical: first, run outer on the goal. If success,
 ;; run (begin-for-subgoals inner) on each subgoal.
-(define ((begin-for-subgoals outer . inner) goal)
+(define (begin-for-subgoals outer . inner)
   (cond [(null? inner)
-         (outer goal)]
+         outer]
         [else
-         (error-do refinement-error
-           [<- (refinement new-goals ext) (outer goal)]
-           [<- subgoal-refinements
-               (all-success
-                (map (apply begin-for-subgoals inner)
-                     new-goals))]
-           [let subgoal-counts (map goal-count subgoal-refinements)]
-           (pure
-            (refinement (append* (map refinement-new-goals subgoal-refinements))
-                        (λ extraction-args
-                          (define subgoal-extracts
-                            (for/list ([r subgoal-refinements]
-                                       [e (list-split extraction-args
-                                                      subgoal-counts)])
-                              (apply (refinement-extraction r) e)))
-                          (apply ext subgoal-extracts)))))]))
+         (proof outer
+                (<- focus get-focus)
+                (if (refined-step? focus)
+                    (proof
+                     (move down/refined-step-children)
+                     (proof-while
+                      (proof (<- f get-focus)
+                             (pure (pair? f)))
+                      (proof (move down/car)
+                             (apply begin-for-subgoals inner)
+                             (move up down/cdr))))
+                    (proof-fail "didn't get a refined step")))]))
+
+;;; When the focus is on a list of subgoals, refine each of them with
+;;; the corresponding element of tacs. If they are different lengths,
+;;; fail. On success, end with the focus on the parent node.
+(define (in-subgoals . tacs)
+  (proof
+   (<- f get-focus)
+   (cond [(pair? f)
+          (if (pair? tacs)
+              (proof (move down/car)
+                     (car tacs)
+                     (move up down/cdr)
+                     (apply in-subgoals (cdr tacs)))
+              (proof-fail (make-exn:fail "Mismatched tactic script length: too few tactics"
+                                         (current-continuation-marks))))]
+         [(null? f)
+          (if (null? tacs)
+              ;; Refocus on parent
+              (proof-while (proof (<- f get-focus)
+                                  (pure (or (null? f) (pair? f))))
+                           (move up))
+              (proof-fail (make-exn:fail "Mismatched tactic script length: too many tactics"
+                                         (current-continuation-marks))))]
+         [else (proof-fail (make-exn:fail (format "Can't apply ~a at focus ~a"
+                                                  'in-subgoals
+                                                  f)
+                                          (current-continuation-marks)))])))
 
 ;;; Run outer. Each of its subgoals must have a corresponding tactic
-;;; in inner that does not fail. The resulting subgoals are those
-;;; induced by the tactics, appended.
-(define ((with-subgoals outer . inner) goal)
-  (error-do refinement-error
-    (<- outer-res (outer goal))
-    (match outer-res
-      [(refinement new-goals extractor) #:when (= (length new-goals) (length inner))
-       (error-do refinement-error
-         (let potential-subgoal-refinements
-             (for/list ([subgoal-tactic inner]
-                        [this-subgoal new-goals])
-               (error-do refinement-error
-                 (let this-relevant? (subgoal-relevant? this-subgoal))
-                 (<- this-refinement (subgoal-tactic
-                                      ((if this-relevant? identity unhide-all)
-                                       (subgoal-obligation this-subgoal))))
-                 (pure (if this-relevant?
-                           this-refinement
-                           (refinement (refinement-new-goals this-refinement)
-                                       (lambda exts #'(void))))))))
-         (<- subgoal-refinements (all-success potential-subgoal-refinements))
-         (let subgoal-counts (map goal-count
-                                  subgoal-refinements))
-         (pure
-          (refinement (append* (map refinement-new-goals subgoal-refinements))
-                      (λ extraction-args
-                        (let ([subgoal-extracts
-                               (map (λ (r e)
-                                      (apply (refinement-extraction r) e))
-                                    subgoal-refinements
-                                    (list-split extraction-args subgoal-counts))])
-                          (apply extractor subgoal-extracts))))))]
-      [_ (refinement-fail 'subgoals goal "mismatched subgoal count")])))
+;;; in inner that does not fail, or else the whole thing fails.
+(define (with-subgoals outer . inner)
+  (proof outer
+         (<- focus get-focus)
+         (if (refined-step? focus)
+             (proof
+              (move down/refined-step-children)
+              (apply in-subgoals inner))
+             (proof-fail "didn't get a refined step"))))
 

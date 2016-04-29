@@ -2,6 +2,8 @@
 
 (require (for-syntax syntax/parse)
          racket/stxparam
+         (only-in racket/contract/combinator
+                  make-flat-contract)
          "monad-notation.rkt")
 
 (provide
@@ -14,6 +16,10 @@
  proof-eval
  proof-get proof-put proof-modify
  proof-chain-list
+ proof-while
+ proof/c
+ handle-errors
+ proof-pure
  define/proof
  for/proof/list
  for*/proof/list
@@ -46,6 +52,15 @@
       [(failure reason) (failure reason)]
       [(success val new-state)
        ((k val) new-state)])))
+
+(define (success/c c)
+  (make-flat-contract #:name `(success/c ,c)
+                      #:first-order (lambda (v)
+                                      (and (success? v)
+                                           (c (success-value v))))))
+
+(define (proof/c c)
+  (-> any/c (or/c (success/c c) failure?)))
 
 (struct exn:fail:not-exn exn:fail (reason)
   #:extra-constructor-name make-exn:fail:not-exn
@@ -256,3 +271,10 @@
                   (3 a 256)   (3 b 512)    (3 c 1024)   (3 d 2048)
                   (4 a 4096)  (4 b 8192)   (4 c 16384)  (4 d 32768)
                   (5 a 65536) (5 b 131072) (5 c 262144) (5 d 524288))))
+
+(define (proof-while c act)
+  (proof (<- go? c)
+         (if go?
+             (proof act
+                    (proof-while c act))
+             (pure (void)))))

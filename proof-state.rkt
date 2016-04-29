@@ -13,7 +13,12 @@
          new-meta
          lookup-meta
          instantiated?
-         uninstantiated?)
+         uninstantiated?
+         get-focus
+         prove
+         move
+         refine
+         solve)
 
 (module+ test
  (require rackunit))
@@ -108,11 +113,14 @@
      (let* ([child-extracts (map complete-proof-extract children)]
             [new-node (complete-proof goal rule (apply extractor child-extracts) children)])
        (set-focus new-node))]
-    [(refined-step _ _ _ _)
-     (proof-fail (make-exn:fail:cant-solve "Not all children are complete"
-                                           (current-continuation-marks)))]
+    [(refined-step _ _ children _)
+     (proof-fail (make-exn:fail:cant-solve
+                  (format "Not all children are complete: ~a"
+                          children)
+                  (current-continuation-marks)))]
     [other-state
-     (proof-fail (make-exn:fail:cant-solve "Not a refined proof step"
+     (proof-fail (make-exn:fail:cant-solve (format "Not a refined proof step: ~a"
+                                                   other-state)
                                            (current-continuation-marks)))]))
 
 (struct exn:fail:cant-refine exn:fail:contract
@@ -132,14 +140,13 @@
                            "Can't refine"
                            (current-continuation-marks)
                            other))]))
-  (<- (refinement new-goals extraction) (rule goal))
+  (<- (refinement new-goals extraction)
+      (rule goal))
   (set-focus (refined-step goal rule new-goals extraction)))
 
 (define/proof (make-subgoal hint goal)
   (<- name (new-meta hint))
   (pure (subgoal name goal)))
-
-
 
 (module+ test
   (define goal (>> empty #'Int))
@@ -211,3 +218,15 @@
   (check-true (complete-proof? proof-5))
   (check-equal? (syntax->datum (complete-proof-extract proof-5))
                 '(+ -23 17 42)))
+
+;; Attempt to prove a goal completely. Return the tree, or throw an
+;; exception if incomplete.
+(define (prove goal prf)
+  (let* ([st (init-proof-state goal)]
+         [res (proof-eval (proof prf
+                                 (<- (proof-state _ looking-at) get)
+                                 (pure (rebuild looking-at)))
+                          st)])
+    (if (complete-proof? res)
+        res
+        (raise (make-exn:fail (format "Incomplete proof: ~a" res) (current-continuation-marks))))))

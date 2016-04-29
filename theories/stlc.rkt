@@ -2,7 +2,8 @@
 
 (require syntax/parse (for-syntax syntax/parse))
 #;(require macro-debugger/syntax-browser)
-(require "../error-handling.rkt" "../infrastructure.rkt")
+(require "../error-handling.rkt" "../infrastructure.rkt" "../proofs.rkt"
+         "../proof-state.rkt")
 
 (require (for-template racket/base racket/match))
 
@@ -72,22 +73,20 @@
          (match-let ([(hypothesis id type visible?) (list-ref hypotheses num)])
            (cond
              [(not visible?)
-              (refinement-fail 'assumption
-                               (>> hypotheses goal)
-                               "Tried to use an irrelevant hypothesis")]
+              (proof-fail (make-exn:fail "Tried to use an irrelevant hypothesis"
+                                         (current-continuation-marks)))]
              [(type=? type goal)
               (done-refining id)]
-             [else (refinement-fail
-                    'assumption
-                    (>> hypotheses goal)
-                    (format "Type mismatch: expected ~a, got ~a"
-                            (syntax->datum goal)
-                            (syntax->datum type)))]))
-         (refinement-fail
-          'assumption
-          (>> hypotheses goal)
-          "Assumption out of bounds"))]
-    [other (refinement-fail 'assumption other "not a well-formed goal")]))
+             [else (proof-fail
+                    (make-exn:fail (format "Type mismatch: expected ~a, got ~a"
+                                           (syntax->datum goal)
+                                           (syntax->datum type))
+                                   (current-continuation-marks)))]))
+         (proof-fail
+          (make-exn:fail "Assumption out of bounds"
+                         (current-continuation-marks))))]
+    [other (proof-fail (make-exn:fail "not a well-formed goal"
+                                      (current-continuation-marks)))]))
 
 
 ;;; Int rules
@@ -96,30 +95,37 @@
   (match-lambda
     [(>> _ (type Int))
      (done-refining (datum->syntax #'here x))]
-    [other (refinement-fail 'int-intro other "goal type must be Int")]))
+    [other (proof-fail (make-exn:fail "goal type must be Int"
+                                      (current-continuation-marks)))]))
 
 (define/contract (addition arg-count)
   (-> natural-number/c rule/c)
   (lambda (hypothetical)
     (match hypothetical
       [(>> hypotheses (type Int))
-       (success
-        (refinement (build-list arg-count
-                                (thunk* (relevant-subgoal (>> hypotheses (type Int)))))
-                    (lambda arguments
-                      (datum->syntax #'here (cons #'+ arguments)))))]
-      [other (refinement-fail 'arg-count other "goal type must be Int")])))
+       (proof
+        (<- subgoals (for/proof/list
+                      ([n (in-cycle '(a b c d e f g h i j k l m n))]
+                       [i (in-range arg-count)])
+                      (<- v (new-meta n))
+                      (pure (subgoal v (>> hypotheses (type Int))))))
+        (pure (refinement subgoals
+                          (lambda arguments
+                            (datum->syntax #'here (cons #'+ arguments))))))]
+      [other (proof-fail (make-exn:fail "goal type must be Int"
+                                        (current-continuation-marks)))])))
 
 (define/contract (length-of-string hypothetical) rule/c
   (match hypothetical
     [(>> hypotheses (type Int))
-     (success
-      (refinement
-       (list (relevant-subgoal (>> hypotheses (type String))))
-       (lambda (argument)
-         #`(string-length #,argument))))]
+     (proof
+      (<- x (new-meta 'a-string))
+      (pure (refinement
+             (list (subgoal x (>> hypotheses (type String))))
+             (lambda (argument)
+               #`(string-length #,argument)))))]
     [other
-     (refinement-fail 'length-of-string other "Goal type must be Int")]))
+     (proof-fail (make-exn:fail "Goal type must be Int" (current-continuation-marks)))]))
 
 ;;; String rules
 (define/contract (string-intro str)
@@ -127,38 +133,47 @@
   (match-lambda
     [(>> _ (type String))
      (done-refining (datum->syntax #'here str))]
-    [other (refinement-fail 'string-intro other "Goal type must be String")]))
+    [other (proof-fail (make-exn:fail "Goal type must be String"
+                                      (current-continuation-marks)))]))
 
 ;;; Function rules
 (define/contract (function-intro x)
   (-> symbol? rule/c)
   (match-lambda
     [(>> hyps (type (--> dom cod)))
-     (let* ([new-scope (make-syntax-introducer)]
-            [annotated-name (new-scope (datum->syntax #f x) 'add)])
-       (success
-        (refinement (list (relevant-subgoal
-                           (>> (cons (hypothesis annotated-name
-                                                 dom
-                                                 #t)
-                                     hyps)
-                               cod)))
-                    (lambda (extract)
-                      #`(lambda (#,annotated-name)
-                          #,(new-scope extract 'add))))))]
-    [other (refinement-fail 'function-intro other "Goal must be function type")]))
+     (proof (let new-scope (make-syntax-introducer))
+            (let annotated-name (new-scope (datum->syntax #f x) 'add))
+            (<- name (new-meta 'body))
+            (pure (refinement
+                   (list (subgoal
+                          name
+                          (>> (cons (hypothesis annotated-name
+                                                dom
+                                                #t)
+                                    hyps)
+                              cod)))
+                   (lambda (extract)
+                     #`(lambda (#,annotated-name)
+                         #,(new-scope extract 'add))))))]
+    [other (proof-fail (make-exn:fail "Goal must be function type"
+                                      (current-continuation-marks)))]))
 
 (define/contract ((application dom) proof-goal)
   (-> syntax? rule/c)
   (unless (type? dom)
-    (refinement-fail 'application proof-goal (format "Not a type: ~a" dom)))
+    (proof-fail (make-exn:fail (format "Not a type: ~a" dom)
+                               (current-continuation-marks))))
   (match proof-goal
     [(>> hypotheses goal)
-     (refinement
-      (list (relevant-subgoal (>> hypotheses #`(--> #,dom #,goal)))
-            (relevant-subgoal (>> hypotheses dom)))
-      (lambda (fun arg)
-        #`(#,fun #,arg)))]))
+     (proof
+      (<- f (new-meta 'fun))
+      (<- x (new-meta 'arg))
+      (pure
+       (refinement
+        (list (subgoal f (>> hypotheses #`(--> #,dom #,goal)))
+              (subgoal x (>> hypotheses dom)))
+        (lambda (fun arg)
+          #`(#,fun #,arg)))))]))
 
 ;;; Operational semantics
 (define (run-program stx [env empty])

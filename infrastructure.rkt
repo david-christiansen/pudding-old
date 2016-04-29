@@ -10,7 +10,6 @@
          new-goal
          done-refining
          >>
-         refinement-fail
          rule/c)
 
 (module+ test
@@ -61,8 +60,8 @@
   #:transparent)
 
 
-(define (done-refining term)
-  (success (refinement empty (lambda _ term) (fresh-context))))
+(define/proof (done-refining term)
+  (pure (refinement empty (lambda _ term))))
 
 (module+ test
   (check-equal? (syntax-e ((refinement-extraction
@@ -74,10 +73,8 @@
   (rule-name goal message)
   #:transparent)
 
-(define rule/c (-> hypothetical? (or/c failure? success?)))
+(define rule/c (-> hypothetical? (proof/c refinement?)))
 
 
-(define (refinement-fail rule-name goal message)
-  (failure (refinement-error rule-name goal message)))
 
 

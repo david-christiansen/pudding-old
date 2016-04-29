@@ -1,6 +1,8 @@
 #lang racket
 
-(require (for-syntax syntax/parse racket/match "infrastructure.rkt" "error-handling.rkt"))
+(require (for-syntax syntax/parse racket/match
+                     "infrastructure.rkt" "error-handling.rkt"
+                     "proofs.rkt" "proof-state.rkt"))
 
 (provide define/refiner)
 
@@ -11,20 +13,12 @@
 
 (define-syntax (define/refiner stx)
   (syntax-parse stx
-    [(_ n:id type:expr script:expr)
+    [(_ n:id type:expr script:expr ...)
      #'(begin
          (define-for-syntax extract
-           (match (script (new-goal #'type))
-             [(success (refinement (list) ext)) (ext)]
-             [(success (refinement (cons goal goals) _))
-              (raise-syntax-error 'define/refiner "Unsolved goal" script)]
-             [(failure (refinement-error rule-name bad-goal message))
-              (raise-syntax-error 'define/refiner
-                                  (format "Error in script: ~a\n  Goal: ~a\n\tRule: ~a"
-                                          message
-                                          bad-goal
-                                          rule-name))]
-             [_ (raise-syntax-error 'define/refiner "The impossible happened")]))
+           (let ([completed (prove (new-goal #'type)
+                                   (proof script ...))])
+             (complete-proof-extract completed)))
 
          (define-syntax (get-extract stx) extract)
 
