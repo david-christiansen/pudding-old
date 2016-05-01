@@ -4,25 +4,22 @@
 (require "../text-ui.rkt")
 (require "../tactics.rkt")
 
+(module stlc-prover-context racket/base
+  (require "../theories/stlc.rkt")
+  (require "../tactics.rkt")
+  (require zippers)
+  (require "../proof-state.rkt")
+  (require "../proofs.rkt")
+
+  (provide stlc-anchor)
+
+  (define-namespace-anchor stlc-anchor))
+
+(require
+ 'stlc-prover-context)
+
 (define (stlc-prover goal)
-  (prover goal (namespace-anchor->namespace stlc)))
-
-(module+ test
-  (define test-term
-    (proof #'(--> String Int)
-           (begin-tactics
-             (function-intro 'x)
-             length-of-string
-             (assumption 0))))
-  (define add-two
-    (proof #'(--> Int Int)
-           (begin-tactics
-             (function-intro 'n)
-             (addition 3)
-             (int-intro 1)
-             (assumption 0)
-             (int-intro 1)))))
-
+  (prover goal (namespace-anchor->namespace stlc-anchor)))
 
 (module+ main
   (stlc-prover #'(--> String Int)))
@@ -31,12 +28,26 @@
 (module+ test
   (require rackunit)
 
-  (define test-input "(function-intro 'x)\nlength-of-string\n(assumption 0)\n")
+  (define test-input
+    (string-append
+     "(refine (function-intro 'x))\n"
+     "(move down/refined-step-children down/list-first)\n"
+     "(refine length-of-string)\n"
+     "(move down/refined-step-children down/list-first)\n"
+     "(refine (assumption 0))\n"
+     "solve\n"
+     "(move up up)\n"
+     "solve\n"
+     "(move up up)\n"
+     "solve\n"
+     ":done"))
 
-  (check-equal?
-   (with-input-from-string test-input
-     (thunk* (with-output-to-string
-               (thunk* (let ([res (stlc-prover #'(--> String Int))])
-                         (check-equal? (syntax->datum res)
-                                       '(lambda (x) (string-length x))))))))
-   "At top.\n>> (--> String Int)\n> Position: 0 \n0. String\n>> Int\n> Position: 0 0 \n0. String\n>> String\n> "))
+
+  (check-true
+   (string?
+    (with-output-to-string
+      (thunk (with-input-from-string test-input
+               (thunk (let ([res (stlc-prover #'(--> String Int))])
+                        (displayln res)
+                        (check-equal? (syntax->datum res)
+                                      '(lambda (x) (string-length x)))))))))))

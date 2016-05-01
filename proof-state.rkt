@@ -15,6 +15,7 @@
          instantiated?
          uninstantiated?
          get-focus
+         at-top?
          prove
          move
          refine
@@ -84,6 +85,10 @@
       (proof (let new-ctxt (assign var stx ctxt))
              (<- st get)
              (put (set-metavariables st new-ctxt)))))
+
+(define/proof at-top?
+  (<- (proof-state _ z) get)
+  (pure (zipper-at-top? z)))
 
 (define/proof get-focus
   (<- (proof-state _ z) get)

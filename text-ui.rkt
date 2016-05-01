@@ -1,16 +1,40 @@
 #lang racket
 
-(require "error-handling.rkt" "infrastructure.rkt")
+(require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt")
 (provide prover)
 
 ;;; UI
 (define (display-hypothetical hypothetical)
   (let ([hypotheses (hypothetical-hypotheses hypothetical)]
         [goal (hypothetical-goal hypothetical)])
-    (for ([hyp (reverse hypotheses)]
-          [which-hyp (range (length hypotheses) 0 -1)])
-      (printf "~a. ~a\n" (- which-hyp 1) (syntax->datum (hypothesis-assumption hyp))))
-    (printf ">> ~a\n" (syntax->datum goal))))
+    `(>> ,hypotheses ,(syntax->datum goal))))
+
+(define (node-summary prf)
+  (match prf
+    [(dependent-subgoal _ _) 'dependent]
+    [(irrelevant-subgoal g)
+     `(_ ,(display-hypothetical g))]
+    [(subgoal n g)
+     `(,n ,(display-hypothetical g))]
+    [(complete-proof g _ e _)
+     `(complete ,(display-hypothetical g) ,(syntax->datum e))]
+    [(refined-step g _ _ _)
+     `(refined ,(display-hypothetical g))]))
+
+(define (show-focus f)
+  (match f
+    [(dependent-subgoal _ _) 'dependent]
+    [(subgoal n g)
+     (display-hypothetical g)]
+    [(complete-proof g _ e ch)
+     `(complete-proof ,(display-hypothetical g) ,(syntax->datum e)
+                      ,(map node-summary ch))]
+    [(refined-step g _ ch _)
+     `(refined ,(display-hypothetical g) ,(map node-summary ch))]
+    [(? list? xs)
+     `(list ,@(map show-focus xs))]
+    [(? syntax? stx)
+     (syntax->datum stx)]))
 
 (define ((display-error header) e)
   (displayln header)
@@ -19,47 +43,36 @@
      (exn-message e) e))
   (displayln "Try again!"))
 
-(define (refinement-step path hypothetical relevant? namespace)
-  (define (retry) (refinement-step path hypothetical relevant? namespace))
-  (if (null? path)
-      (display "At top.")
-      (begin (display "Position: ")
-             (for ([pos (reverse path)])
-               (printf "~a " pos))))
-  (displayln "")
-  (display-hypothetical hypothetical)
-  (display "> ")
-  (with-handlers ([exn:fail? (lambda (e)
-                               ((display-error "Exception during refinement:") e)
-                               (retry))])
-    (with-fallbacks ([refinement-error?
-                      (lambda (e)
-                        ((display-error "Refinement failed:")
-                         (exn:fail (refinement-error-message e)
-                                   (current-continuation-marks)))
-                        (retry))])
-      (let* ([input (read)])
-        (if (equal? input ':q)
-            (begin (printf "Exiting, proof incomplete\n") (exit 0))
-            (error-do refinement-error
-              (let rule (call-with-values
-                         (thunk (eval input namespace))
-                         (lambda args
-                           (if (cons? args)
-                               (car args)
-                               (error 'refinement-step "Didn't get a rule")))))
-              (<- (refinement new-goals extractor) (rule hypothetical))
-              (let subterms (for/list ([g new-goals]
-                                       [pos (range 0 (length new-goals))])
-                              (refinement-step (cons pos path)
-                                               (subgoal-obligation g)
-                                               (subgoal-relevant? g)
-                                               namespace)))
-              (pure (if relevant?
-                        (apply extractor subterms)
-                        (void)))))))))
+(define/proof (finish-proof namespace)
+  (<- top? at-top?)
+  (if (not top?)
+      (proof (pure (displayln "Not at top level"))
+             (interactive-refiner namespace))
+      (proof (<- focus get-focus)
+             (if (not (complete-proof? focus))
+                 (proof (pure (displayln "Not a complete proof"))
+                        (interactive-refiner namespace))
+                 (pure (complete-proof-extract focus))))))
+
+(define/proof (interactive-refiner namespace)
+  (<- f get-focus)
+  (pure (pretty-print (show-focus f)))
+  (pure (display "> "))
+  (let input (read-syntax))
+  (pure (displayln (format "input is ~a" input)))
+  (if (eof-object? input)
+      (pure #f)
+      (match (syntax->datum input)
+        [':q (pure #f)]
+        [':done (finish-proof namespace)]
+        [_ (proof (let tactic (with-handlers ([exn:fail?
+                                               proof-pure])
+                                (eval input namespace)))
+                  (if (exn? tactic)
+                      (pure (displayln tactic))
+                      tactic)
+                  (interactive-refiner namespace))])))
 
 (define (prover goal namespace)
-  (let* ([hypothetical (new-goal goal)]
-         [result (refinement-step empty hypothetical #t namespace)])
-    result))
+  (proof-eval (interactive-refiner namespace)
+              (init-proof-state (new-goal goal))))
