@@ -6,7 +6,6 @@
          (struct-out hypothetical)
          unhide-all
          (struct-out refinement)
-         (struct-out refinement-error)
          new-goal
          done-refining
          >>
@@ -62,16 +61,6 @@
 
 (define/proof (done-refining term)
   (pure (refinement empty (lambda _ term))))
-
-(module+ test
-  (check-equal? (syntax-e ((refinement-extraction
-                            (success-value
-                             (done-refining #'broccoli)))))
-                'broccoli))
-
-(struct refinement-error
-  (rule-name goal message)
-  #:transparent)
 
 (define rule/c (-> hypothetical? (proof/c refinement?)))
 
