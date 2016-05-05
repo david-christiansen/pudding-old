@@ -3,5 +3,9 @@
               ((eval . (put 'All 'racket-indent-function 1))
                (eval . (put 'error-do 'racket-indent-function 1))
                (eval . (put 'handle-errors 'racket-indent-function 1))
+               (eval . (put 'for/proof 'racket-indent-function 1))
+               (eval . (put 'for*/proof 'racket-indent-function 1))
+               (eval . (put 'for/proof/list 'racket-indent-function 1))
+               (eval . (put 'for*/proof/list 'racket-indent-function 1))
                (eval . (put 'steps 'racket-indent-function 1)))))
 

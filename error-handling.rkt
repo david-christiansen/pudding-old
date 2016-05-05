@@ -21,6 +21,8 @@
  handle-errors
  proof-pure
  define/proof
+ for/proof
+ for*/proof
  for/proof/list
  for*/proof/list
  (struct-out success)
@@ -223,6 +225,42 @@
          (<- y arg2)
          (pure (proc x y))))
 
+(define-syntax (for/proof stx)
+  (syntax-parse stx
+    [(_ clauses steps ...)
+     (with-syntax ([orig stx])
+       #'(for/fold/derived
+          orig ([step (proof (pure (void)))])
+          clauses
+          (proof step steps ... (pure (void)))))]))
+
+(module+ test
+  (check-equal? (proof-eval (proof (for/proof
+                                    ([x '(1 2 3 4 5)])
+                                    (<- y proof-get)
+                                    (proof-put (+ x y)))
+                                   proof-get)
+                            0)
+                15))
+
+(define-syntax (for*/proof stx)
+  (syntax-parse stx
+    [(_ clauses steps ...)
+     (with-syntax ([orig stx])
+       #'(for*/fold/derived
+          orig ([step (proof (pure (void)))])
+          clauses
+          (proof step steps ... (pure (void)))))]))
+
+(module+ test
+  (check-equal? (proof-eval (proof (for*/proof
+                                    ([x '(1 2)]
+                                     [y '(1 2)])
+                                    (<- z proof-get)
+                                    (proof-put (cons (cons x y) z)))
+                                   proof-get)
+                            '())
+                '((2 . 2) (2 . 1) (1 . 2) (1 . 1))))
 
 (define-syntax (for/proof/list stx)
   (syntax-parse stx

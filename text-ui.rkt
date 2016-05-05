@@ -18,7 +18,7 @@
      `(,n ,(display-hypothetical g))]
     [(complete-proof g _ e _)
      `(complete ,(display-hypothetical g) ,(syntax->datum e))]
-    [(refined-step g _ _ _)
+    [(refined-step _ g _ _ _)
      `(refined ,(display-hypothetical g))]))
 
 (define (show-focus f)
@@ -29,7 +29,7 @@
     [(complete-proof g _ e ch)
      `(complete-proof ,(display-hypothetical g) ,(syntax->datum e)
                       ,(map node-summary ch))]
-    [(refined-step g _ ch _)
+    [(refined-step _ g _ ch _)
      `(refined ,(display-hypothetical g) ,(map node-summary ch))]
     [(? list? xs)
      `(list ,@(map show-focus xs))]

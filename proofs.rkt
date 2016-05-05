@@ -14,8 +14,7 @@
           irrelevant-subgoal
           subgoal
           complete-proof
-          refined-step)
-         steps)
+          refined-step))
 
 (module+ test
   (require rackunit))
@@ -43,40 +42,14 @@
 ;;; Refined nodes are not yet complete, but progress has been
 ;;; made. The children can be either subgoals, refined steps, or
 ;;; complete proofs.
-(struct refined-step (goal rule children extractor) #:transparent)
+(struct refined-step (name goal rule children extractor) #:transparent)
 
 
 (define-struct-zipper-frames
   dependent-subgoal
   irrelevant-subgoal
   subgoal
-  complete-proof refined-step)
-
-
-;;; Clojure-style threading macro, with explicit binding for clarity
-;;; and flexibility
-(define-syntax (steps stx)
-  (syntax-parse stx
-    [(_ last-step:expr (x:id))
-     #'last-step]
-    [(_ current:expr (x:id) next-step:expr more-steps:expr ...)
-     (syntax/loc stx
-       (steps ((lambda (x)
-                 next-step)
-               current)
-              (x)
-              more-steps ...))]))
-
-(module+ test
-  (check-equal? (steps "a string!" (x)
-                  (string-append x (list->string (reverse (string->list x))))
-                  (string-append x x))
-                "a string!!gnirts aa string!!gnirts a")
-  (check-equal? (steps (zip '(a b c)) (x)
-                  (down/cdr x)
-                  (edit reverse x)
-                  (edit (lambda (y) (cons "hi" y)) x)
-                  (rebuild x))
-                '(a "hi" c b)))
+  complete-proof
+  refined-step)
 
 
