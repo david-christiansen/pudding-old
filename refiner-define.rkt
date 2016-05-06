@@ -16,7 +16,7 @@
     [(_ n:id type:expr script:expr ...)
      #'(begin
          (define-for-syntax extract
-           (let ([completed (prove (new-goal #'type)
+           (let ([completed (prove (new-goal type)
                                    (proof script ...))])
              (complete-proof-extract completed)))
 

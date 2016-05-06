@@ -14,7 +14,7 @@
 
 
 ;; A linear tactic script, dispatching subgoals as they arise
-(define/refiner add-two (--> Int Int)
+(define/refiner add-two #'(--> Int Int)
     (refine (function-intro 'n))
     (move down/refined-step-children)
     (move down/list-first)
@@ -41,7 +41,7 @@
 ;; A tree-shaped tactic script, corresponding more closely to the goal
 ;; structure
 
-(define/refiner add-2 (--> Int Int)
+(define/refiner add-2 #'(--> Int Int)
   (with-subgoals (refine (function-intro 'n))
     (by
      (with-subgoals (refine (addition 3))
@@ -54,7 +54,7 @@
               solve))))
   solve)
 
-(define/refiner strlen (--> String Int)
+(define/refiner strlen #'(--> String Int)
   (proof
     (refine (function-intro 'str))
     (move down/refined-step-children down/list-first)

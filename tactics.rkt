@@ -14,11 +14,11 @@
 ;;; Executing tactics
 (define tactic-trace? (make-parameter #f))
 
-(define (pretty-hypothetical seq)
+(define (pretty-sequent seq)
   `(>> ,(map (lambda (x)
                (cons (syntax->datum (car x)) (syntax->datum (cdr x))))
-             (hypothetical-hypotheses seq))
-       ,(syntax->datum (hypothetical-goal seq))))
+             (sequent-hypotheses seq))
+       ,(syntax->datum (sequent-goal seq))))
 
 (define/proof skip
   (pure (void)))
