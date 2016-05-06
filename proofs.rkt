@@ -15,6 +15,7 @@
           subgoal
           complete-proof
           refined-step)
+         proof-step-goal
          steps)
 
 (module+ test
@@ -52,6 +53,12 @@
   subgoal
   complete-proof refined-step)
 
+(define (proof-step-goal prf)
+  (match prf
+    [(subgoal _ g) g]
+    [(complete-proof g _ _ _) g]
+    [(refined-step g _ _ _) g]
+    [(irrelevant-subgoal g) g]))
 
 ;;; Clojure-style threading macro, with explicit binding for clarity
 ;;; and flexibility

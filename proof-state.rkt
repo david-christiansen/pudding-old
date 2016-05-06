@@ -18,6 +18,7 @@
          at-top?
          prove
          move
+         movement-possible?
          refine
          solve)
 
@@ -100,6 +101,11 @@
 
 (define (set-focus val)
   (edit-focus (thunk* val)))
+
+(define (movement-possible? direction)
+  (proof
+   (<- (proof-state ctxt z) get)
+   (pure (can-move? direction z))))
 
 (define (move . procs)
   (proof
