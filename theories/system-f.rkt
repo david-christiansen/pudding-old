@@ -4,6 +4,8 @@
 
 (require "../error-handling.rkt" "../infrastructure.rkt" "../proof-state.rkt" "../proofs.rkt")
 
+(require (for-template racket/base))
+
 (provide judgment has-type is-type
          type Int String → ∀
          add-type-scopes
@@ -203,6 +205,7 @@
                             "not a well-formed goal")]))
 
 
+
 ;;; Rules for building types
 (define/contract Int-f rule/c
   (match-lambda
@@ -314,7 +317,6 @@
 (define/contract Forall-intro rule/c
   (match-lambda
     [(>> hyps (judgment (has-type (type (∀ α τ)))))
-     (displayln τ)
      (proof (<- body (new-meta 'body))
             (pure
              (refinement
@@ -323,3 +325,5 @@
                                       (judgment (has-type τ)))))
               identity)))]
     [other (refinement-fail 'forall-intro other "Goal must be universal type")]))
+
+
