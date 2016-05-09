@@ -5,7 +5,7 @@
  ;; Make definitions with the refiner
  "../refiner-define.rkt"
  ;; The theory and tactics we care about
- (for-syntax "../theories/system-f.rkt"
+ (for-syntax "../theories/second-order.rkt"
              "../tactics.rkt"
              "../proofs.rkt"
              "../proof-state.rkt"
