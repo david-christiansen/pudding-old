@@ -40,20 +40,30 @@
 (struct success (value state) #:transparent)
 (struct failure (reason) #:transparent)
 
-(define (proof-fail reason)
-  (lambda (state)
-    (failure reason)))
+;;; A wrapper around the functions that make up a state monad (to
+;;; improve error messages). Not exporting it means that the core
+;;; proof monad is fixed by this module!
+(struct proof-step (action)
+  #:property prop:procedure (struct-field-index action))
 
-(define (proof-pure val)
-  (lambda (state)
-    (success val state)))
+(define/contract (proof-fail reason)
+  (-> any/c proof-step?)
+  (proof-step (lambda (state)
+                (failure reason))))
 
-(define (proof-bind x k)
-  (lambda (old-state)
-    (match (x old-state)
-      [(failure reason) (failure reason)]
-      [(success val new-state)
-       ((k val) new-state)])))
+(define/contract (proof-pure val)
+  (-> any/c proof-step?)
+  (proof-step (lambda (state)
+                (success val state))))
+
+(define/contract (proof-bind x k)
+  (-> proof-step? (-> any/c proof-step?) proof-step?)
+  (proof-step (lambda (old-state)
+                (match-let ([(proof-step fun) x])
+                  (match (fun old-state)
+                    [(failure reason) (failure reason)]
+                    [(success val new-state)
+                     ((k val) new-state)])))))
 
 (define (success/c c)
   (make-flat-contract #:name `(success/c ,c)
@@ -62,13 +72,17 @@
                                            (c (success-value v))))))
 
 (define (proof/c c)
-  (-> any/c (or/c (success/c c) failure?)))
+  (struct/c proof-step
+            (-> any/c
+                (or/c (success/c c)
+                      failure?))))
 
 (struct exn:fail:not-exn exn:fail (reason)
   #:extra-constructor-name make-exn:fail:not-exn
   #:transparent)
 
-(define (proof-run program state)
+(define/contract (proof-run program state)
+  (-> (proof/c any/c) any/c (values any/c any/c))
   (match (program state)
     [(success out new-state)
      (values out new-state)]
@@ -80,6 +94,7 @@
                  (current-continuation-marks) reason)))]))
 
 (define (proof-eval program state)
+  (-> (proof/c any/c) any/c any/c)
   (call-with-values (thunk (proof-run program state))
                     (lambda (result new-state)
                       result)))
@@ -99,12 +114,15 @@
                 (success 5 (void))))
 
 
-(define (proof-get state)
-  (success state state))
+(define/contract proof-get
+  proof-step?
+  (proof-step (lambda (state)
+                (success state state))))
 
 (define (proof-put new-state)
-  (lambda (old-state)
-    (success (void) new-state)))
+  (-> any/c proof-step?)
+  (proof-step (lambda (old-state)
+                (success (void) new-state))))
 
 (module+ test
   (check-equal?
@@ -154,15 +172,15 @@
 (define-syntax (handle-errors stx)
   (syntax-parse stx
     [(_ program (handler-pattern rhs ...) ...)
-     #'(lambda (old-state)
-         (match (program old-state)
-           [(success val new-state)
-            (success val new-state)]
-           [(failure reason)
-            (match reason
-              [handler-pattern ((proof rhs ...) old-state)]
-              ...
-              [other ((proof-fail other) old-state)])]))]))
+     #'(proof-step (lambda (old-state)
+                     (match (program old-state)
+                       [(success val new-state)
+                        (success val new-state)]
+                       [(failure reason)
+                        (match reason
+                          [handler-pattern ((proof rhs ...) old-state)]
+                          ...
+                          [other ((proof-fail other) old-state)])])))]))
 
 (define-syntax (define/proof stx)
   (syntax-parse stx
