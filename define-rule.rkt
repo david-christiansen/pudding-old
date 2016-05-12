@@ -7,7 +7,10 @@
          "error-handling.rkt"
          "proof-state.rkt"
          "proofs.rkt")
+(provide rule define-rule)
+
 (module+ test (require rackunit))
+
 
 (begin-for-syntax
   (define-syntax-class underscore
@@ -131,6 +134,7 @@
                                         (quasisyntax extract))))))]
                 [_  (proof-fail (make-exn:fail failure-message (current-continuation-marks)))])])))]))
 
+
 (define-syntax (rule stx)
   (syntax-parse stx
     [(_ (~or (~optional (~seq #:literals literals:expr)
@@ -143,7 +147,11 @@
                         #:defaults ([literal-sets #'()])
                         #:name "literal sets")
              (~optional (~seq #:failure-message failure-message:str)
-                        #:defaults ([failure-message #'"Can't refine"])))
+                        #:defaults ([failure-message #'"Can't refine"])
+                        #:name "failure message")
+             (~optional (~seq #:scopes (scopes:id ...))
+                        #:defaults ([(scopes 1) null])
+                        #:name "scope names"))
         ...
         alt
         ...)
@@ -152,11 +160,18 @@
                                       (attribute literals)
                                       (attribute datum-literals)
                                       (attribute literal-sets))
-                         (attribute alt))])
-       #`(match-lambda
-           alternatives ...
-           [other (proof-fail (make-exn:fail failure-message
-                                             (current-continuation-marks)))]))]))
+                         (attribute alt))]
+                   [(scope-bindings ...)
+                    (map (lambda (scope-name)
+                           (quasisyntax/loc scope-name
+                             [#,scope-name (make-syntax-introducer)]))
+                         (syntax->list #'(scopes ...)))])
+       #`(lambda (st)
+           (let (scope-bindings ...)
+               (match st
+                 alternatives ...
+                 [other (proof-fail (make-exn:fail failure-message
+                                                   (current-continuation-marks)))]))))]))
 
 (define-syntax (define-rule stx)
   (syntax-parse stx
