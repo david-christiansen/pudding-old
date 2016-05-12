@@ -100,8 +100,8 @@
 
 (define/contract (addition arg-count)
   (-> natural-number/c rule/c)
-  (lambda (hypothetical)
-    (match hypothetical
+  (lambda (goal)
+    (match goal
       [(>> hypotheses (type Int))
        (proof
         (<- subgoals (for/proof/list
@@ -115,8 +115,8 @@
       [other (proof-fail (make-exn:fail "goal type must be Int"
                                         (current-continuation-marks)))])))
 
-(define/contract (length-of-string hypothetical) rule/c
-  (match hypothetical
+(define/contract (length-of-string goal) rule/c
+  (match goal
     [(>> hypotheses (type Int))
      (proof
       (<- x (new-meta 'a-string))

@@ -4,33 +4,33 @@
 (provide prover)
 
 ;;; UI
-(define (display-hypothetical hypothetical)
-  (let ([hypotheses (hypothetical-hypotheses hypothetical)]
-        [goal (hypothetical-goal hypothetical)])
+(define (display-sequent sequent)
+  (let ([hypotheses (sequent-hypotheses sequent)]
+        [goal (sequent-goal sequent)])
     `(>> ,hypotheses ,(syntax->datum goal))))
 
 (define (node-summary prf)
   (match prf
     [(dependent-subgoal _ _) 'dependent]
     [(irrelevant-subgoal g)
-     `(_ ,(display-hypothetical g))]
+     `(_ ,(display-sequent g))]
     [(subgoal n g)
-     `(,n ,(display-hypothetical g))]
+     `(,n ,(display-sequent g))]
     [(complete-proof g _ e _)
-     `(complete ,(display-hypothetical g) ,(syntax->datum e))]
-    [(refined-step g _ _ _)
-     `(refined ,(display-hypothetical g))]))
+     `(complete ,(display-sequent g) ,(syntax->datum e))]
+    [(refined-step _ g _ _ _)
+     `(refined ,(display-sequent g))]))
 
 (define (show-focus f)
   (match f
     [(dependent-subgoal _ _) 'dependent]
     [(subgoal n g)
-     (display-hypothetical g)]
+     (display-sequent g)]
     [(complete-proof g _ e ch)
-     `(complete-proof ,(display-hypothetical g) ,(syntax->datum e)
+     `(complete-proof ,(display-sequent g) ,(syntax->datum e)
                       ,(map node-summary ch))]
-    [(refined-step g _ ch _)
-     `(refined ,(display-hypothetical g) ,(map node-summary ch))]
+    [(refined-step _ g _ ch _)
+     `(refined ,(display-sequent g) ,(map node-summary ch))]
     [(? list? xs)
      `(list ,@(map show-focus xs))]
     [(? syntax? stx)

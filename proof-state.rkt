@@ -20,6 +20,7 @@
          move
          movement-possible?
          refine
+         movement-possible?
          solve)
 
 (module+ test
@@ -102,11 +103,6 @@
 (define (set-focus val)
   (edit-focus (thunk* val)))
 
-(define (movement-possible? direction)
-  (proof
-   (<- (proof-state ctxt z) get)
-   (pure (can-move? direction z))))
-
 (define (move . procs)
   (proof
    (<- (proof-state ctxt z) get)
@@ -116,15 +112,54 @@
   #:extra-constructor-name make-exn:fail:cant-solve
   #:transparent)
 
+(define/proof (repeat-until-fail tac)
+  (handle-errors tac
+    [_ (pure void)])
+  (repeat-until-fail tac))
+
+(define/proof (movement-possible? direction)
+  (<- (proof-state _ z) get)
+  (pure (can-move? direction z)))
+
+;;; Update the neighbors after a solve.
+(define update-neighbors
+  (letrec ([update-goal
+            (lambda (metas g)
+              (match g
+                [(dependent-subgoal x todo)
+                 (let ([val (lookup-metavariable metas x)])
+                   (if (instantiated? val)
+                       (update-goal metas (todo val))
+                       g))]
+                [other other]))])
+
+    (proof (<- (proof-state metas (zipper focus ctxt)) get)
+           (match ctxt
+             [(cons (list-item-frame to-l to-r) _)
+              (proof (move up)
+                     (<- (proof-state _ (zipper neighbors _)) get)
+                     (set-focus
+                      (for/list ([goal neighbors])
+                        (update-goal metas goal)))
+                     (move (down/list-ref (length to-l))))]
+             [(? null?) (pure (void))]
+             [_ (proof-fail (make-exn:fail (format "No neighbors: ~a" ctxt) (current-continuation-marks)))]))))
+
 (define/proof solve
   (<- (proof-state _ looking-at) get)
   (match (zipper-focus looking-at)
-    [(refined-step goal rule children extractor)
+    [(refined-step name goal rule children extractor)
      #:when (andmap complete-proof? children)
-     (let* ([child-extracts (map complete-proof-extract children)]
-            [new-node (complete-proof goal rule (apply extractor child-extracts) children)])
-       (set-focus new-node))]
-    [(refined-step _ _ children _)
+     (proof (let child-extracts (map complete-proof-extract children))
+            (let ext (apply extractor child-extracts))
+            (let new-node (complete-proof goal
+                                          rule
+                                          ext
+                                          children))
+            (set-focus new-node)
+            (assign-meta name ext)
+            update-neighbors)]
+    [(refined-step _ _ _ children _)
      (proof-fail (make-exn:fail:cant-solve
                   (format "Not all children are complete: ~a"
                           children)
@@ -134,6 +169,7 @@
                                                    other-state)
                                            (current-continuation-marks)))]))
 
+
 (struct exn:fail:cant-refine exn:fail:contract
   (looking-at)
   #:extra-constructor-name make-exn:fail:cant-refine
@@ -141,7 +177,8 @@
 
 (define/proof (refine rule)
   (<- (proof-state ctxt looking-at) get)
-  (<- goal (match (zipper-focus looking-at)
+  (let focus (zipper-focus looking-at))
+  (<- goal (match focus
              [(subgoal x goal)
               (pure goal)]
              [(irrelevant-subgoal goal)
@@ -153,7 +190,10 @@
                            other))]))
   (<- (refinement new-goals extraction)
       (rule goal))
-  (set-focus (refined-step goal rule new-goals extraction)))
+  (<- name (pure (if (subgoal? focus)
+                     (subgoal-name focus)
+                     #f)))
+  (set-focus (refined-step name goal rule new-goals extraction)))
 
 (define/proof (make-subgoal hint goal)
   (<- name (new-meta hint))
@@ -180,13 +220,33 @@
        #:when (free-identifier=? todo #'Int)
        (proof (pure (refinement empty (thunk (datum->syntax #'here n)))))]))
 
+  (define int-type
+    (match-lambda
+      [(>> hyps todo)
+       #:when (free-identifier=? todo #'Type)
+       (proof (pure (refinement empty (thunk #'Int))))]))
+
+  (define with-hyp
+    (match-lambda
+      [(>> hyps todo)
+       (proof (<- t1 (new-meta 't1))
+              (<- t2 (new-meta 't2))
+              (<- arg (new-meta 'arg))
+              (let subgoals (list (subgoal t1 (>> hyps #'Type))
+                                  (dependent-subgoal t1 (lambda (t)
+                                                          (subgoal t2 (>> hyps #`(-> #,t #,todo)))))
+                                  (dependent-subgoal t1 (lambda (t) (subgoal arg (>> hyps t))))))
+              (proof (pure (refinement
+                            subgoals
+                            (thunk #'int)))))]))
+
   (define (test-a-proof prf)
     (rebuild
      (proof-state-proof
       (proof-eval (proof prf
                          get)
                   (init-proof-state goal)))))
-  
+
 
   (define proof-1 (test-a-proof (proof (pure (void)))))
   (check-false (complete-proof? proof-1))
@@ -211,11 +271,11 @@
   (check-true (andmap subgoal? (refined-step-children proof-4)))
 
   (define proof-5
-    (let ([next-in-list (move up down/cdr down/car)])
+    (let ([next-in-list (move right/list)])
       (test-a-proof
        (proof (refine (rule-plus 3))
               (move down/refined-step-children)
-              (move down/car)
+              (move down/list-first)
               (refine (lit -23))
               solve
               next-in-list
@@ -224,11 +284,23 @@
               next-in-list
               (refine (lit 42))
               solve
-              (move up up up up)
+              (move up up)
               solve))))
   (check-true (complete-proof? proof-5))
   (check-equal? (syntax->datum (complete-proof-extract proof-5))
-                '(+ -23 17 42)))
+                '(+ -23 17 42))
+
+  (define proof-6
+    (test-a-proof
+     (proof (refine with-hyp))))
+
+  (define proof-7
+    (test-a-proof
+     (proof (refine with-hyp)
+            (move down/refined-step-children down/list-first)
+            (<- f get-focus)
+            (refine int-type)
+            solve))))
 
 ;; Attempt to prove a goal completely. Return the tree, or throw an
 ;; exception if incomplete.

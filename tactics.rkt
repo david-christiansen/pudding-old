@@ -14,14 +14,18 @@
 ;;; Executing tactics
 (define tactic-trace? (make-parameter #f))
 
-(define (pretty-hypothetical seq)
+(define (pretty-sequent seq)
   `(>> ,(map (lambda (x)
                (cons (syntax->datum (car x)) (syntax->datum (cdr x))))
-             (hypothetical-hypotheses seq))
-       ,(syntax->datum (hypothetical-goal seq))))
+             (sequent-hypotheses seq))
+       ,(syntax->datum (sequent-goal seq))))
 
 (define/proof skip
   (pure (void)))
+
+(define (try tactic)
+  (first-success tactic
+                 skip))
 
 (define (first-success . tacs)
   (if (pair? tacs)
@@ -29,9 +33,6 @@
         [_ (apply first-success (cdr tacs))])
       (proof-fail "Alternatives exhausted.")))
 
-(define (try tactic)
-  (first-success tactic
-                 skip))
 
 (define (trace message)
   (displayln message)
@@ -64,32 +65,26 @@
                              (move up down/cdr))))
                     (proof-fail "didn't get a refined step")))]))
 
-;;; When the focus is on a list of subgoals, refine each of them with
-;;; the corresponding element of tacs. If they are different lengths,
-;;; fail. On success, end with the focus on the parent node.
+;;; When the focus is on an element of a list of subgoals, refine each
+;;; of the remaining subgoals with the corresponding element of
+;;; tacs. If they are different lengths, fail. On success, end with
+;;; the focus on the parent node.
 (define (in-subgoals . tacs)
   (proof
    (<- f get-focus)
-   (cond [(pair? f)
-          (if (pair? tacs)
-              (proof (move down/car)
-                     (car tacs)
-                     (move up down/cdr)
-                     (apply in-subgoals (cdr tacs)))
-              (proof-fail (make-exn:fail "Mismatched tactic script length: too few tactics"
-                                         (current-continuation-marks))))]
-         [(null? f)
-          (if (null? tacs)
-              ;; Refocus on parent
-              (proof-while (proof (<- f get-focus)
-                                  (pure (or (null? f) (pair? f))))
-                           (move up))
-              (proof-fail (make-exn:fail "Mismatched tactic script length: too many tactics"
-                                         (current-continuation-marks))))]
-         [else (proof-fail (make-exn:fail (format "Can't apply ~a at focus ~a"
-                                                  'in-subgoals
-                                                  f)
-                                          (current-continuation-marks)))])))
+   (if (and (list? f)
+            (= (length f) (length tacs)))
+       (proof (move down/list-first)
+              (for/proof
+               ([tac tacs])
+               tac
+               (<- can? (movement-possible? right/list))
+               (if can?
+                   (move right/list)
+                   skip))
+              (move up up))
+       (proof-fail (make-exn:fail "Mismatched tactic script length"
+                                  (current-continuation-marks))))))
 
 ;;; Run outer. Each of its subgoals must have a corresponding tactic
 ;;; in inner that does not fail, or else the whole thing fails.
