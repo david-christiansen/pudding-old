@@ -183,26 +183,54 @@
          (rule defn ...))]))
 
 (module+ test
-  (define Σ #f)
-  (define Q #f)
-  (define qp #f)
+  ;;; This macro relies on with-syntax bound syntax pattern variables
+  ;;; to have lexical scope. Ensure that this is the case!
+  (check-eqv? (syntax->datum
+               (let ([f (with-syntax ([a #'fnord]) (lambda (x) #'a))])
+                 (f 3)))
+              'fnord)
 
+  ;;; Bindings for this type theory
+  (define-syntax (Σ stx)
+    (raise-syntax-error 'Σ "Type used out of context" stx))
+  (define-syntax (Π stx)
+    (raise-syntax-error 'Π "Type used out of context" stx))
+  (define-syntax (Bool stx)
+    (raise-syntax-error 'Bool "Type used out of context" stx))
+  (define-syntax (So stx)
+    (raise-syntax-error 'So "Type used out of context" stx))
+  (define-syntax (Type stx)
+    (raise-syntax-error 'Type "Type used out of context" stx))
 
-  ;; TODO: non-naive substitution (but this is OK for testing define-rule)
+  ;; TODO: check that bound-identifier=? is what we want to avoid
+  ;; capture
   (define (subst new-stx x in)
     (syntax-parse in
-      #:literals (Σ Q qp)
+      #:literals (Σ Π Bool So cons lambda)
       [(Σ (y:id A) B)
        #`(Σ (y #,(subst new-stx x #'A))
-            (if (free-identifier=? #'y x)
+            (if (bound-identifier=? #'y x)
                 #,(subst new-stx x #'B)
                 #'B))]
-      [Q #'Q]
-      [(qp body)
-       #`(qp #,(subst new-stx x #'body))]
+      [(Π (y:id A) B)
+       #`(Π (y #,(subst new-stx x #'A))
+            (if (bound-identifier=? #'y x)
+                #,(subst new-stx x #'B)
+                #'B))]
+      [(lambda (y:id) B)
+       #`(lambda (y)
+           (if (bound-identifier=? #'y x)
+               #,(subst new-stx x #'B)
+               #'B))]
+      [Bool #'Bool]
+      [(So body)
+       #`(So #,(subst new-stx x #'body))]
       [y:id
-       #:when (free-identifier=? #'y x)
+       #:when (bound-identifier=? #'y x)
        new-stx]
+      [(cons e1 e2)
+       #`(cons #,(subst new-stx x #'e1)
+               #,(subst new-stx x #'e2))]
       [(e:expr ...)
        (datum->syntax in (map (lambda (e)
                                 (subst new-stx x e))
@@ -210,57 +238,105 @@
       [other
        #'other]))
 
+  (define-rule (Σ-formation x)
+    #:literals (Σ)
+    #:scopes (new-scope)
+    [(>> H Type)
+     ([A (>> H Type)]
+      [B (A) (>> (cons (hypothesis (new-scope (datum->syntax #f x) 'add)
+                                   (new-scope #'A)
+                                   #t)
+                       H)
+                 Type)])
+     (Σ (#,(new-scope (datum->syntax #f x) 'add)
+         A)
+        #,(new-scope #'B 'add))])
+
   (define-rule Σ-intro
     #:literals (Σ)
-    [(>> H (Σ (x A) B))
+    [(>> H (Σ (x:id A) B))
      ([a (>> H A)]
       [b (a) (>> H #,(subst #'a #'x #'B))])
      (cons a b)])
 
-  (define-rule Q-intro-1
-    #:literals (Q)
-    [(>> H Q)
+  (define-rule Bool-formation
+    #:literals (Type)
+    [(>> H Type)
      ()
-     'q])
+     Bool])
 
-  (define-rule Q-intro-2
-    #:literals (Q)
-    [(>> H Q)
+  (define-rule Bool-intro-1
+    #:literals (Bool)
+    [(>> H Bool)
      ()
-     'other-q])
+     #t])
 
-  (define-rule qp-intro
-    #:literals (qp quote)
-    #:datum-literals (q)
-    #:failure-message "Can only be used with q"
-    [(>> H (qp 'q))
+  (define-rule Bool-intro-2
+    #:literals (Bool)
+    [(>> H Bool)
      ()
-     'yep-q])
+     #f])
+
+  (define-rule So-intro
+    #:literals (So quote)
+    #:failure-message "Can only be used with #t"
+    [(>> H (So #t))
+     ()
+     (void)])
 
   (define prf-1
     (proof-eval (proof (refine Σ-intro)
                        (move down/refined-step-children down/list-first)
-                       (refine Q-intro-1)
+                       (refine Bool-intro-1)
                        solve
                        (move right/list)
-                       (refine qp-intro)
+                       (refine So-intro)
                        solve
                        (move up up)
                        solve
                        get-focus)
-                (init-proof-state (>> null #'(Σ (y Q) (qp y))))))
+                (init-proof-state (>> null #'(Σ (y Bool) (So y))))))
   (check-equal? (syntax->datum (complete-proof-extract prf-1))
-                '(cons 'q 'yep-q))
+                '(cons #t (void)))
   (define prf-2
     (thunk (proof-eval (proof (refine Σ-intro)
                               (move down/refined-step-children down/list-first)
-                              (refine Q-intro-2)
+                              (refine Bool-intro-2)
                               solve
                               (move right/list)
-                              (refine qp-intro)
+                              (refine So-intro)
                               solve
                               (move up up)
                               solve
                               get-focus)
-                       (init-proof-state (>> null #'(Σ (y Q) (qp y)))))))
-  (check-exn exn:fail? prf-2))
+                       (init-proof-state (>> null #'(Σ (y Bool) (So y)))))))
+  (check-exn exn:fail? prf-2)
+  (define Bool-pair-type
+    (complete-proof-extract
+     (proof-eval (proof (refine (Σ-formation 't))
+                        (move down/refined-step-children down/list-first)
+                        (refine Bool-formation)
+                        solve
+                        (move right/list)
+                        (refine Bool-formation)
+                        solve
+                        (move up up)
+                        solve
+                        get-focus)
+                 (init-proof-state (>> null #'Type)))))
+  (define pair-of-bools
+    (complete-proof-extract
+     (proof-eval (proof (refine Σ-intro)
+                        (move down/refined-step-children down/list-first)
+                        (refine Bool-intro-1)
+                        solve
+                        (move right/list)
+                        (refine Bool-intro-2)
+                        solve
+                        (move up up)
+                        solve
+                        get-focus)
+                 (init-proof-state (>> null Bool-pair-type)))))
+  (check-equal? (syntax->datum pair-of-bools)
+                '(cons #t #f)))
+
