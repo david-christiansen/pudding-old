@@ -6,7 +6,6 @@
 
 (require (for-template racket/base racket/match))
 
-
 (provide judgment has-type is-type
          type Int String → ∀
          add-type-scopes
@@ -206,6 +205,7 @@
                             "not a well-formed goal")]))
 
 
+
 ;;; Rules for building types
 (define/contract Int-f rule/c
   (match-lambda
@@ -326,3 +326,5 @@
                                       (judgment (has-type τ)))))
               identity)))]
     [other (refinement-fail 'forall-intro other "Goal must be universal type")]))
+
+

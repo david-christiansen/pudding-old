@@ -30,8 +30,9 @@
 ;;; here, but it will not contribute an extract.
 (struct irrelevant-subgoal (goal) #:transparent)
 
-;;; An ordinary subgoal that's ready to be attacked. The name can
-;;; appear at the head of dependent subgoals.
+;;; An ordinary subgoal that's ready to be attacked. The name, which
+;;; must be a metavariable, can appear at the head of dependent
+;;; subgoals.
 (struct subgoal (name goal) #:transparent)
 
 
