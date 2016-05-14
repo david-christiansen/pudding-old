@@ -15,6 +15,7 @@
          instantiated?
          uninstantiated?
          get-focus
+         set-focus
          at-top?
          prove
          move

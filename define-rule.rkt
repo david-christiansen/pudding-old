@@ -244,7 +244,7 @@
     [(>> H Type)
      ([A (>> H Type)]
       [B (A) (>> (cons (hypothesis (new-scope (datum->syntax #f x) 'add)
-                                   (new-scope #'A)
+                                   #'A
                                    #t)
                        H)
                  Type)])

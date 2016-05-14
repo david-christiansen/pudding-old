@@ -15,7 +15,10 @@
           subgoal
           complete-proof
           refined-step)
-         proof-step-goal)
+         down/proof-step-children
+         proof-step-goal
+         proof-step?
+         proof-step-children)
 
 (module+ test
   (require rackunit))
@@ -58,6 +61,30 @@
     [(subgoal _ g) g]
     [(complete-proof g _ _ _) g]
     [(refined-step _ g _ _ _) g]
-    [(irrelevant-subgoal g) g]))
+    [(irrelevant-subgoal g) g]
+    [(dependent-subgoal mv f)
+     (proof-step-goal (f mv))]))
 
+(define (proof-step? x)
+  (or (subgoal? x)
+      (complete-proof? x)
+      (refined-step? x)
+      (irrelevant-subgoal? x)
+      (dependent-subgoal? x)))
 
+(define (proof-step-children prf)
+  (match prf
+    [(complete-proof _ _ _ cs) cs]
+    [(refined-step _ _ _ cs _) cs]
+    [_ #f]))
+
+(define down/proof-step-children
+  (zipper-movement
+   (lambda (z)
+     (cond [(complete-proof? (zipper-focus z))
+            (down/complete-proof-children z)]
+           [(refined-step? (zipper-focus z))
+            (down/refined-step-children z)]))
+   (lambda (z)
+     (or (complete-proof? (zipper-focus z))
+         (refined-step? (zipper-focus z))))))
