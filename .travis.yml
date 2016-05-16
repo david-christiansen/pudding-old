@@ -67,3 +67,6 @@ script:
 # - raco test -x -p <pkg>
 
 after_script:
+
+after_success:
+  - raco cover -f coveralls -d $TRAVIS_BUILD_DIR/coverage . # generate coverage information for coveralls
