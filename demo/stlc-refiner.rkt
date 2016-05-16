@@ -12,6 +12,13 @@
 (module+ test
   (require rackunit))
 
+(define/refiner two #'Int
+  (refine length-of-string)
+  (move down/proof-step-children down/list-first)
+  (refine (string-intro "ab"))
+  solve
+  (move up up)
+  solve)
 
 ;; A linear tactic script, dispatching subgoals as they arise
 (define/refiner add-two #'(--> Int Int)
