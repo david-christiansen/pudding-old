@@ -5,6 +5,8 @@
 (require zippers)
 (require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt")
 
+(provide prover prover-in-frame)
+
 (define (show-sequent s)
   (define show-h
     (match-lambda
@@ -52,8 +54,6 @@
                   [label (format "~a" (syntax->datum todo))])])
           (new message% [parent this] [label (format "Oops: focus ~a" focus)])))))
 
-
-
 (define children-panel%
   (class group-box-panel%
     (init-field parent)
@@ -99,16 +99,13 @@
               [i (in-naturals)])
           (add-child i ch))))))
 
-(define prover-frame%
-  (class frame%
-    (init-field proof-state)
+(define prover-pane%
+  (class vertical-panel%
+    (init-field parent proof-state)
     (init rule-namespace
-          [assumption-rule #f]
-          [width 800]
-          [height 600])
-    (super-new [label "Proof editor"] [width width] [height height])
-
-    (define view-updates null)
+          [assumption-rule #f])
+    (super-new [parent parent])
+        (define view-updates null)
     (define (update-views)
       ;; Do autosolve first, to make sure it happens before view updates
       (autosolver (send this run-action get-focus))
@@ -137,10 +134,8 @@
                  (andmap complete-proof? (refined-step-children focus)))
         (run-action solve)))
 
-    (define stack (new vertical-panel% [parent this]))
-
     (define navbar (new horizontal-panel%
-                        [parent stack]
+                        [parent this]
                         [stretchable-height #f]))
 
     (define movement-buttons '())
@@ -201,11 +196,11 @@
 
 
     (define spacer
-      (new pane% [parent stack] [stretchable-width #f] [stretchable-height #t]))
+      (new pane% [parent this] [stretchable-width #f] [stretchable-height #t]))
 
     (define goal-viewer
       (new goal-view-panel%
-           [parent stack]
+           [parent this]
            [assumption-action
             (if assumption-rule
                 (lambda (x)
@@ -219,7 +214,7 @@
 
     (define children-viewer
       (new children-panel%
-           [parent stack]
+           [parent this]
            [proof-runner (lambda (tac)
                            (run-action tac)
                            (update-views))]))
@@ -230,7 +225,7 @@
 
     (define rule-input
       (new text-field%
-           [parent stack]
+           [parent this]
            [label "Refinement rule"]
            [callback
             (lambda (field evt)
@@ -259,7 +254,7 @@
     (define extract-view
       (new message%
            [label ""]
-           [parent stack]
+           [parent this]
            [auto-resize #t]))
 
     (define (update-extract-view focus)
@@ -281,6 +276,35 @@
 
     (update-views)))
 
+;;; Make a frame into a prover frame.
+;;; This is useful for Slideshow.
+(define (prover-in-frame frame
+                         #:proof-state proof-state
+                         #:rule-namespace rule-namespace
+                         #:assumption-rule [assumption-rule #f])
+  (new prover-pane%
+       [parent frame]
+       [proof-state proof-state]
+       [rule-namespace rule-namespace]
+       [assumption-rule assumption-rule]))
+
+(define prover-frame%
+  (class frame%
+    (init proof-state
+          rule-namespace
+          assumption-rule
+          [width 800] [height 600] [label "Proof Editor"])
+
+    (super-new [width width] [height height] [label label])
+
+    (new prover-pane%
+         [parent this]
+         [proof-state proof-state]
+         [rule-namespace rule-namespace]
+         [assumption-rule assumption-rule])))
+
+
+
 (define (prover namespace goal #:assumption-rule [assumption-rule #f])
   (define frame (new prover-frame%
                      [proof-state (init-proof-state (new-goal goal))]
@@ -289,21 +313,22 @@
   (send frame show #t)
   (void))
 
+(module+ test
+  (module stlc-prover-context racket/base
+    (require "theories/stlc.rkt")
+    (require "tactics.rkt")
+    (require zippers)
+    (require "proof-state.rkt")
+    (require "proofs.rkt")
 
-(module stlc-prover-context racket/base
-  (require "theories/stlc.rkt")
-  (require "tactics.rkt")
-  (require zippers)
-  (require "proof-state.rkt")
-  (require "proofs.rkt")
+    (provide stlc-anchor g (rename-out [assumption stlc-assumption]))
 
-  (provide stlc-anchor g (rename-out [assumption stlc-assumption]))
+    (define-namespace-anchor stlc-anchor)
+    (define g #'(--> String Int)))
 
-  (define-namespace-anchor stlc-anchor)
-  (define g #'(--> String Int)))
+  (require
+   'stlc-prover-context)
 
-(require
- 'stlc-prover-context)
-
-(define (test-prover)
-  (prover (namespace-anchor->namespace stlc-anchor) g #:assumption-rule stlc-assumption))
+  (define (test-prover)
+    (prover (namespace-anchor->namespace stlc-anchor) g
+            #:assumption-rule stlc-assumption)))

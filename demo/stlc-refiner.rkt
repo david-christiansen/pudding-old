@@ -67,6 +67,21 @@
     (move up up)
     solve))
 
+(define/refiner twice-string-length #'(--> String Int)
+  (with-subgoals (refine (function-intro 'str))
+    (by (with-subgoals (refine (addition 2))
+          (proof (refine length-of-string)
+                 (move down/proof-step-children down/list-first)
+                 (by (refine (assumption 0)))
+                 (move up up)
+                 solve)
+          (proof (refine length-of-string)
+                 (move down/proof-step-children down/list-first)
+                 (by (refine (assumption 0)))
+                 (move up up)
+                 solve))))
+  solve)
+
 (module+ test
   (check-equal? (add-two 4)
                 6)
