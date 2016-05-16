@@ -2,8 +2,8 @@
 
 (require syntax/parse (for-syntax syntax/parse))
 #;(require macro-debugger/syntax-browser)
-(require "../error-handling.rkt" "../infrastructure.rkt" "../proofs.rkt"
-         "../proof-state.rkt")
+(require "../error-handling.rkt" "../define-rule.rkt" "../infrastructure.rkt"
+         "../proofs.rkt" "../proof-state.rkt")
 
 (require (for-template racket/base racket/match))
 
@@ -17,9 +17,12 @@
 ;; These definitions aren't really used for anything. They're here to
 ;; get a top-level binding for use in syntax objects representing
 ;; types.
-(define-syntax (Int stx) (raise-syntax-error #f "Type used out of context"))
-(define-syntax (String stx) (raise-syntax-error #f "Type used out of context"))
-(define-syntax (--> stx) (raise-syntax-error #f "Type used out of context"))
+(define-syntax (Int stx)
+  (raise-syntax-error #f "Type used out of context"))
+(define-syntax (String stx)
+  (raise-syntax-error #f "Type used out of context"))
+(define-syntax (--> stx)
+  (raise-syntax-error #f "Type used out of context"))
 
 (define-match-expander type
   (lambda (stx)
@@ -92,11 +95,12 @@
 ;;; Int rules
 (define/contract (int-intro x)
   (-> integer? rule/c)
-  (match-lambda
-    [(>> _ (type Int))
-     (done-refining (datum->syntax #'here x))]
-    [other (proof-fail (make-exn:fail "goal type must be Int"
-                                      (current-continuation-marks)))]))
+  (with-syntax ([x x])
+    (rule #:failure-message "Goal type must be Int"
+          #:datum-literals (Int)
+          [(>> _ Int)
+           ()
+           x])))
 
 (define/contract (addition arg-count)
   (-> natural-number/c rule/c)
@@ -115,49 +119,40 @@
       [other (proof-fail (make-exn:fail "goal type must be Int"
                                         (current-continuation-marks)))])))
 
-(define/contract (length-of-string goal) rule/c
-  (match goal
-    [(>> hypotheses (type Int))
-     (proof
-      (<- x (new-meta 'a-string))
-      (pure (refinement
-             (list (subgoal x (>> hypotheses (type String))))
-             (lambda (argument)
-               #`(string-length #,argument)))))]
-    [other
-     (proof-fail (make-exn:fail "Goal type must be Int" (current-continuation-marks)))]))
+(define/contract length-of-string rule/c
+  (rule
+   #:failure-message  "Goal type must be Int"
+   [(>> hypotheses Int)
+    ([a-string (>> hypotheses String)])
+    (string-length a-string)]))
 
 ;;; String rules
 (define/contract (string-intro str)
   (-> string? rule/c)
-  (match-lambda
-    [(>> _ (type String))
-     (done-refining (datum->syntax #'here str))]
-    [other (proof-fail (make-exn:fail "Goal type must be String"
-                                      (current-continuation-marks)))]))
+  (with-syntax ([str str])
+   (rule #:failure-message  "Goal type must be String"
+         #:datum-literals (String)
+         [(>> _ String)
+          ()
+          str])))
 
 ;;; Function rules
 (define/contract (function-intro x)
   (-> symbol? rule/c)
-  (match-lambda
-    [(>> hyps (type (--> dom cod)))
-     (proof (let new-scope (make-syntax-introducer))
-            (let annotated-name (new-scope (datum->syntax #f x) 'add))
-            (<- name (new-meta 'body))
-            (pure (refinement
-                   (list (subgoal
-                          name
-                          (>> (cons (hypothesis annotated-name
-                                                dom
-                                                #t)
-                                    hyps)
-                              cod)))
-                   (lambda (extract)
-                     #`(lambda (#,annotated-name)
-                         #,(new-scope extract 'add))))))]
-    [other (proof-fail (make-exn:fail "Goal must be function type"
-                                      (current-continuation-marks)))]))
+  (with-syntax ([x x])
+    (rule #:failure-message "Goal must be function type"
+          #:datum-literals (-->)
+          #:scopes (new-scope)
+          [(>> hyps (--> dom cod))
+           ([body (>> (cons (hypothesis (new-scope #'x 'add)
+                                        #'dom
+                                        #t)
+                            hyps)
+                      cod)])
+           (lambda (#,(new-scope #'x 'add))
+             #,(new-scope #'body 'add))])))
 
+;; TODO - rewrite using dependent refinement
 (define/contract ((application dom) proof-goal)
   (-> syntax? rule/c)
   (unless (type? dom)
