@@ -5,7 +5,7 @@
 (require "infrastructure.rkt" "error-handling.rkt" "proofs.rkt" "proof-state.rkt" "monad-notation.rkt")
 
 (provide begin-for-subgoals first-success proof <- pure
-         skip with-subgoals tactic-trace? trace try
+         skip with-subgoals with-subgoals* tactic-trace? trace try
          prove)
 
 (module+ test
@@ -97,3 +97,7 @@
               (apply in-subgoals inner))
              (proof-fail "didn't get a refined step"))))
 
+
+(define (with-subgoals* outer . inner)
+  (proof (apply with-subgoals outer inner)
+         solve))
