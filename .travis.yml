@@ -51,6 +51,13 @@ before_script:
   - "sh -e /etc/init.d/xvfb start"
   - sleep 3 # give xvfb some time to start
   - raco pkg install zippers
+  - pushd .
+  - cd $HOME
+  - git clone https://github.com/david-christiansen/racket-presentation-gui.git presentations
+  - cd presentations
+  - raco pkg install
+  - popd
+  
 # Here supply steps such as raco make, raco test, etc.
 #
 # Tip: Use `raco pkg install --deps search-auto <pkg>` to install any
