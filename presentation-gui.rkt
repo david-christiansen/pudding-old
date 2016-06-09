@@ -2,7 +2,46 @@
 
 (require racket/gui framework presentations pict)
 (require zippers)
+(require (prefix-in pp: pprint))
+(require syntax/parse)
 (require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt")
+
+(define (pprint-term stx canvas)
+  (syntax-parse stx
+    #:literals (lambda)
+    [x:id
+     (pp:markup (lambda (str)
+                  (send canvas make-presentation #'x '(name)
+                        (text str)))
+                (pp:text (symbol->string (datum->syntax #'x))))]
+    [(lambda (xs:id ...) body)
+     (pp:h-append
+      pp:lparen
+      (pp:v-concat/s
+       (list (pp:group
+              (pp:hs-append (list (pp:text "lambda")
+                                  pp:lparen
+                                  (pp:hs-append
+                                   (map (lambda (t) (pprint-term t canvas))
+                                        (syntax-e #'(xs ...))))
+                                  pp:rparen))))
+       (pprint-term #'body canvas))
+      pp:rparen)]
+    [(tm ...)
+     (apply pp:v-concat/s (map (lambda (t) (pprint-term t canvas))
+                               (syntax-e #'(tm ...))))]
+    [other (text (syntax->datum #'other))]))
+(define (term->pict stx canvas)
+  (define (string->pict x)
+    (if (string? x)
+        (let ([lines (string-split x "\n" #:trim #f)])
+          (for/fold ([pict (blank)]) ([l lines])
+            (vl-append pict (text l))))
+        x))
+  (pp:pretty-markup
+   (pprint-term stx canvas)
+   (lambda (x y)
+     (hbl-append (string->pict x) (string->pict y)))))
 
 (define (read-with-length-from str)
   (define port (open-input-string str))
@@ -62,6 +101,27 @@
         (queue-callback (thunk (update-bg)))
         (queue-callback (thunk (retract-callback)))))))
 
+
+(define (vertically . imgs)
+  (define h 0)
+  (define todo
+    (for/list ([i imgs])
+      (define step
+        (list 0 h i))
+      (set! h (+ h (send i get-height)))
+      step))
+  (new compound-img% [imgs todo]))
+
+(define (horizontally . imgs)
+  (define w 0)
+  (define todo
+    (for/list ([i imgs])
+      (define step
+        (list w 0 i))
+      (set! w (+ w (send i get-width)))
+      step))
+  (new compound-img% [imgs todo]))
+
 (define (present-term tm)
   (define tm-pict (inset (text (format "~v" (syntax->datum tm))) 8))
   (new presentation-img%
@@ -89,7 +149,7 @@
      (new presentation-img%
           [object h]
           [modality '(hypothesis)]
-          [img name-p])]
+          [img (horizontally name-p colon assumption-p)])]
     ))
 
 (define (present-goal g)
@@ -111,6 +171,7 @@
      (error 'nope44)]
     [(refined-step name goal rule children extractor)
      (error 'ĺkjlkj)]))
+
 
 (define (prover-window namespace goal)
   (define proof-state
@@ -137,8 +198,21 @@
   (define horiz (new panel:vertical-dragable% [parent stack]))
   (define context (new panel:horizontal-dragable% [parent horiz]))
   (define node-context (new presentation-canvas% [parent context]))
-  (define global-context (new tab-panel% [parent context]
-                              [choices '("Program" "Proof")]))
+  (define global-context (new tab-panel%
+                              [parent context]
+                              [choices '("Program" "Proof")]
+                              [callback (lambda (panel ev)
+                                          (when (eqv? (send ev get-event-type) 'tab-panel)
+                                            (match (send global-context get-selection)
+                                              [0 (send global-context change-children
+                                                       (thunk* (list program-view)))]
+                                              [1 (send global-context change-children
+                                                       (thunk* (list proof-view)))]
+                                              [other (error "Unknown tab")])))]))
+  (define program-view (new presentation-pict-canvas%
+                            [parent global-context]))
+  (define proof-view (new presentation-pict-canvas%
+                          [parent global-context]))
   (define proof-script (new proof-script-text%
                             [advance-callback
                              (lambda (prog)
@@ -148,16 +222,26 @@
                             [retract-callback undo]
                             [error-callback displayln]))
   (define proof-script-holder (new editor-canvas% [parent horiz] [editor proof-script]))
+
+  (define (update-views)
+    (define focus (run-action get-focus))
+    (send program-view remove-all-picts)
+    (send program-view add-pict (text (format "~v" focus)) 5 5))
+
   (define retract-button
     (new button%
          [parent toolbar]
          [label "Retract"]
-         [callback (thunk* (send proof-script retract))]))
+         [callback (thunk* (send proof-script retract)
+                           (queue-callback update-views))]))
   (define advance-button
     (new button%
          [parent toolbar]
          [label "Advance"]
-         [callback (thunk* (send proof-script advance))]))
+         [callback (thunk* (send proof-script advance)
+                           (queue-callback update-views))]))
+
+  (update-views)
 
   (send frame show #t))
 
