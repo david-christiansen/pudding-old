@@ -6,8 +6,6 @@
 (require syntax/parse)
 (require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt" "metavariables.rkt")
 
-
-
 (define (hl pict)
   (frame pict))
 
@@ -71,46 +69,55 @@
   (define indent-space 20)
   (define by (text "by" '(bold)))
   (define left (text "<=" '(bold)))
+  (define (with-children step pict)
+    (match step
+      [(or (refined-step _ _ _ children _)
+           (complete-proof _ _ _ children))
+       (apply vl-append
+              vspace
+              pict
+              (for/list ([c children])
+                (proof->pict c canvas (add1 indent-steps))))]
+      [_ pict])
+    )
+  (define step-pict
+    (match proof
+      [(subgoal name goal)
+       (define status (text "?" '(bold)))
+       (define n (text (format "~v" name)))
+       (define p (inset (hb-append
+                         hspace
+                         status
+                         n
+                         left
+                         (sequent->pict goal canvas))
+                        3))
+       (on-box p)]
+      [(refined-step name goal rule children extractor)
+       (define status (text "➥" '(bold)))
+       (define n (text (format "~v" name)))
+       (define p
+         (inset (hb-append hspace
+                           status
+                           n
+                           left
+                           (sequent->pict goal canvas)
+                           (if rule
+                               (hb-append hspace by (term->pict rule canvas))
+                               empty))
+                3))
+       (on-box p)]
+      [(complete-proof goal rule extract children)
+       (define status (text "✔" '(bold)))
+       (inset (hb-append hspace
+                         status
+                         (term->pict extract canvas)
+                         left
+                         (sequent->pict goal canvas))
+              3)]
+      [other (on-box (text (format "~v" other)))]))
   (inset (send canvas make-presentation proof '(proof-step)
-               (match proof
-                 [(subgoal name goal)
-                  (define status (text "?" '(bold)))
-                  (define n (text (format "~v" name)))
-                  (define p (inset (hb-append
-                                    hspace
-                                    status
-                                    n
-                                    left
-                                    (sequent->pict goal canvas))
-                                   3))
-                  (on-box p)]
-                 [(refined-step name goal rule children extractor)
-                  (define status (text "➥" '(bold)))
-                  (define n (text (format "~v" name)))
-                  (define p
-                    (inset (hb-append hspace
-                                       status
-                                       n
-                                       left
-                                       (sequent->pict goal canvas)
-                                       (if rule
-                                           (hb-append hspace by (term->pict rule canvas))
-                                           empty))
-                           3))
-                  (apply vl-append
-                         vspace
-                         (on-box p)
-                         (for/list ([c children])
-                           (proof->pict c canvas (add1 indent-steps))))]
-                 [(complete-proof goal rule extract children)
-                  (define status (text "✔" '(bold)))
-                  (inset (hb-append hspace
-                                     status
-                                     (term->pict extract canvas)
-                                     left
-                                     (sequent->pict goal canvas))
-                         3)]
-                 [other (on-box (text (format "~v" other)))])
+               (with-children proof step-pict)
                hl)
          (* indent-space indent-steps) 0 0 0))
 
@@ -290,6 +297,11 @@
          [label "Pudding Prover"]
          [width 800]
          [height 600]))
+  (define menu
+    (new menu-bar% [parent frame]))
+  (define edit-menu
+    (new menu% [parent menu] [label "Edit"]))
+  (append-editor-operation-menu-items edit-menu)
   (define stack
     (new vertical-panel% [parent frame]))
   (define toolbar
@@ -335,11 +347,31 @@
 
   (define proof-script-keymap
     (let ([map (send proof-script get-keymap)])
+      (add-editor-keymap-functions map)
+      (add-text-keymap-functions map)
       (send map add-function "advance" (thunk* (send proof-script advance)
                                                (queue-callback update-views)))
-      (send map add-function "advance" (thunk* (send proof-script advance)
+      (send map add-function "retract" (thunk* (send proof-script advance)
                                                (queue-callback update-views)))
-      (send map map-function "m:n" "advance")
+      (for/list ([key '(("m:n" "advance")
+                        ("m:p" "retract")
+                        ("c:n" "next-line")
+                        ("c:p" "previous-line")
+                        ("m:v" "previous-page")
+                        ("c:v" "next-page")
+                        ("c:f" "forward-character")
+                        ("c:b" "backward-character")
+                        ("m:f" "forward-word")
+                        ("m:b" "backward-word")
+                        ("c:a" "beginning-of-line")
+                        ("c:e" "end-of-line")
+                        ("s:m:>" "end-of-file")
+                        ("s:m:<" "beginning-of-file")
+                        ("c:w" "cut-clipboard")
+                        ("m:w" "copy-clipboard")
+                        ("c:y" "paste-clipboard"))])
+        (send map map-function (car key) (cadr key)))
+
       map))
 
   (define proof-script-holder
