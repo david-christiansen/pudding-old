@@ -4,44 +4,74 @@
 (require zippers)
 (require (prefix-in pp: pprint))
 (require syntax/parse)
-(require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt")
+(require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt" "metavariables.rkt")
+
+(define (hl pict)
+  (frame pict))
 
 (define (pprint-term stx canvas)
   (syntax-parse stx
     #:literals (lambda)
     [x:id
-     (pp:markup (lambda (str)
-                  (send canvas make-presentation #'x '(name)
-                        (text str)))
-                (pp:text (symbol->string (datum->syntax #'x))))]
+     (pp:markup
+      (lambda (str)
+        (if (string? str)
+            (send canvas make-presentation #'x '(name)
+                  (text str) hl)
+            (send canvas make-presentation #'x '(name)
+                  str hl)))
+      (pp:text (symbol->string (syntax->datum #'x))))]
     [(lambda (xs:id ...) body)
      (pp:h-append
       pp:lparen
       (pp:v-concat/s
        (list (pp:group
-              (pp:hs-append (list (pp:text "lambda")
-                                  pp:lparen
-                                  (pp:hs-append
+              (pp:hs-append (pp:text "lambda")
+                            pp:lparen
+                            (apply pp:hs-append
                                    (map (lambda (t) (pprint-term t canvas))
                                         (syntax-e #'(xs ...))))
-                                  pp:rparen))))
-       (pprint-term #'body canvas))
+                            pp:rparen))
+             (pprint-term #'body canvas)))
       pp:rparen)]
+    #;
+    [(? metavariable? (app syntax-e))
+     (pp:markup
+      (lambda (str)
+        (send canvas make-presentation #'x '())))]
     [(tm ...)
-     (apply pp:v-concat/s (map (lambda (t) (pprint-term t canvas))
-                               (syntax-e #'(tm ...))))]
-    [other (text (syntax->datum #'other))]))
+     (pp:h-append pp:lparen
+                  (pp:v-concat/s (map (lambda (t) (pprint-term t canvas))
+                                      (syntax-e #'(tm ...))))
+                  pp:rparen)]
+    [other (pp:text (format "~v" (syntax->datum #'other)))]))
+
 (define (term->pict stx canvas)
   (define (string->pict x)
     (if (string? x)
-        (let ([lines (string-split x "\n" #:trim #f)])
+        (let ([lines (string-split x "\n" #:trim? #f)])
           (for/fold ([pict (blank)]) ([l lines])
             (vl-append pict (text l))))
         x))
   (pp:pretty-markup
    (pprint-term stx canvas)
    (lambda (x y)
-     (hbl-append (string->pict x) (string->pict y)))))
+     (hbl-append (string->pict x) (string->pict y)))
+   70))
+
+(define (extract-pict focus canvas)
+  (define (get-extract f)
+    (match f
+      [(subgoal n g) (datum->syntax #f n)]
+      [(complete-proof _ _ e _) e]
+      [(dependent-subgoal waiting next)
+       (get-extract (next waiting))]
+      [(irrelevant-subgoal _) #'(void)]
+      [(refined-step _ _ _ children extractor)
+       (apply extractor
+              (for/list ([c children] #:when (not (irrelevant-subgoal? c)))
+                (get-extract c)))]))
+  (term->pict (get-extract focus) canvas))
 
 (define (read-with-length-from str)
   (define port (open-input-string str))
@@ -226,7 +256,7 @@
   (define (update-views)
     (define focus (run-action get-focus))
     (send program-view remove-all-picts)
-    (send program-view add-pict (text (format "~v" focus)) 5 5))
+    (send program-view add-pict (extract-pict focus program-view) 5 5))
 
   (define retract-button
     (new button%
