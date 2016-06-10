@@ -57,6 +57,7 @@ before_script:
   - cd presentations
   - raco pkg install
   - popd
+  - raco pkg install --deps search-auto pprint
   
 # Here supply steps such as raco make, raco test, etc.
 #
