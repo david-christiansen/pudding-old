@@ -3,18 +3,27 @@
 (require racket/gui framework presentations pict)
 (require zippers)
 (require (prefix-in pp: pprint))
-(require syntax/parse)
+(require syntax/parse
+         (only-in syntax/id-set immutable-bound-id-set))
 (require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt" "metavariables.rkt")
 
 (define (hl pict)
   (frame pict))
 
+(define name/p (make-presentation-type 'name/p
+                                       #:equiv? (lambda (x y)
+                                                  (and (identifier? x)
+                                                       (identifier? y)
+                                                       (bound-identifier=? x y)))
+                                       #:empty-set immutable-bound-id-set))
+(define proof-step/p (make-presentation-type 'proof-step/p))
+
 (define (hyp->pict h canvas)
   (match h
     [(hypothesis name assumption relevant?)
      (define name-pict
-       (send canvas make-presentation name '(name)
-             (text (format "~v" (syntax-e name)))
+       (send canvas make-presentation name name/p
+             (text (format "~a" (syntax-e name)))
              hl))
      (define assumption-pict
        (term->pict assumption canvas))
@@ -116,7 +125,7 @@
                          (sequent->pict goal canvas))
               3)]
       [other (on-box (text (format "~v" other)))]))
-  (inset (send canvas make-presentation proof '(proof-step)
+  (inset (send canvas make-presentation proof proof-step/p
                (with-children proof step-pict)
                hl)
          (* indent-space indent-steps) 0 0 0))
@@ -128,9 +137,9 @@
      (pp:markup
       (lambda (str)
         (if (string? str)
-            (send canvas make-presentation #'x '(name)
+            (send canvas make-presentation #'x name/p
                   (opaque (text str)) hl)
-            (send canvas make-presentation #'x '(name)
+            (send canvas make-presentation #'x name/p
                   str hl)))
       (pp:text (symbol->string (syntax->datum #'x))))]
     [x #:when (metavariable? (syntax-e #'x))
