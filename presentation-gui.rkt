@@ -4,25 +4,44 @@
 (require zippers)
 (require (prefix-in pp: pprint))
 (require syntax/parse
-         (only-in syntax/id-set immutable-bound-id-set))
+         (only-in syntax/id-set immutable-bound-id-set immutable-free-id-set))
 (require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt" "metavariables.rkt")
 
-(define (hl pict)
-  (frame pict))
+(require framework)
 
-(define name/p (make-presentation-type 'name/p
-                                       #:equiv? (lambda (x y)
-                                                  (and (identifier? x)
-                                                       (identifier? y)
-                                                       (bound-identifier=? x y)))
-                                       #:empty-set immutable-bound-id-set))
+(define (hl pict)
+  (let ([w (pict-width pict)]
+        [h (pict-height pict)])
+    (frame (cc-superimpose pict
+                           (cellophane (filled-rectangle w h
+                                                         #:draw-border? #f
+                                                         #:color "yellow")
+                                       0.2))
+           #:color "yellow")))
+
+(define bound-identifier/p
+  (make-presentation-type 'bound-identifier/p
+                          #:equiv? (lambda (x y)
+                                     (and (identifier? x)
+                                          (identifier? y)
+                                          (bound-identifier=? x y)))
+                          #:empty-set immutable-bound-id-set))
+(define free-identifier/p
+  (make-presentation-type 'free-identifier/p
+                          #:equiv? (lambda (x y)
+                                     (and (identifier? x)
+                                          (identifier? y)
+                                          (free-identifier=? x y)))
+                          #:empty-set immutable-free-id-set))
 (define proof-step/p (make-presentation-type 'proof-step/p))
+
+(define metavariable/p (make-presentation-type 'metavariable/p))
 
 (define (hyp->pict h canvas)
   (match h
     [(hypothesis name assumption relevant?)
      (define name-pict
-       (send canvas make-presentation name name/p
+       (send canvas make-presentation name bound-identifier/p
              (text (format "~a" (syntax-e name)))
              hl))
      (define assumption-pict
@@ -78,6 +97,10 @@
   (define indent-space 20)
   (define by (text "by" '(bold)))
   (define left (text "<=" '(bold)))
+  (define (mv n)
+    (send canvas make-presentation n metavariable/p
+          (opaque (text (format "~v" n)))
+          hl))
   (define (with-children step pict)
     (match step
       [(or (refined-step _ _ _ children _)
@@ -87,13 +110,12 @@
               pict
               (for/list ([c children])
                 (proof->pict c canvas (add1 indent-steps))))]
-      [_ pict])
-    )
+      [_ pict]))
   (define step-pict
     (match proof
       [(subgoal name goal)
        (define status (text "?" '(bold)))
-       (define n (text (format "~v" name)))
+       (define n (mv name))
        (define p (inset (hb-append
                          hspace
                          status
@@ -104,7 +126,7 @@
        (on-box p)]
       [(refined-step name goal rule children extractor)
        (define status (text "➥" '(bold)))
-       (define n (text (format "~v" name)))
+       (define n (mv name))
        (define p
          (inset (hb-append hspace
                            status
@@ -134,18 +156,22 @@
   (syntax-parse stx
     #:literals (lambda)
     [x:id
+     (define p-type
+       (if (list? (identifier-binding #'x))
+           free-identifier/p
+           bound-identifier/p))
      (pp:markup
       (lambda (str)
         (if (string? str)
-            (send canvas make-presentation #'x name/p
+            (send canvas make-presentation #'x p-type
                   (opaque (text str)) hl)
-            (send canvas make-presentation #'x name/p
+            (send canvas make-presentation #'x p-type
                   str hl)))
       (pp:text (symbol->string (syntax->datum #'x))))]
     [x #:when (metavariable? (syntax-e #'x))
        (pp:markup
         (lambda (str)
-          (send canvas make-presentation (syntax-e #'x) '(metavariable)
+          (send canvas make-presentation (syntax-e #'x) metavariable/p
                 (if (string? str) (opaque (text str)) str)
                 hl))
         (pp:text (format "~v" (syntax-e #'x))))]
@@ -154,7 +180,7 @@
       pp:lparen
       (pp:v-concat/s
        (list (pp:group
-              (pp:hs-append (pp:text "lambda")
+              (pp:hs-append (pprint-term #'lambda canvas)
                             pp:lparen
                             (apply pp:hs-append
                                    (map (lambda (t) (pprint-term t canvas))
@@ -194,8 +220,10 @@
       [(refined-step _ _ _ children extractor)
        (apply extractor
               (for/list ([c children] #:when (not (irrelevant-subgoal? c)))
-                (get-extract c)))]))
-  (term->pict (get-extract focus) canvas))
+                (get-extract c)))]
+      [_ (blank)]))
+  (define ext (get-extract focus))
+  (term->pict ext canvas))
 
 (define (read-with-length-from str)
   (define port (open-input-string str))
@@ -291,15 +319,22 @@
     (send global-context set-selection 2)
     (set-tab 2))
 
-  (define (set-tab i)
-    (match i
+  (define current-tab 0)
+  (define (update-tab)
+    (match current-tab
       [0 (send global-context change-children
-               (thunk* (list program-view)))]
+               (thunk* (list program-view)))
+         (queue-callback (thunk (send program-view refresh)))]
       [1 (send global-context change-children
-               (thunk* (list proof-view)))]
+               (thunk* (list proof-view)))
+         (queue-callback (thunk (send proof-view refresh)))]
       [2 (send global-context change-children
-               (thunk* (list error-view)))]
+               (thunk* (list error-view)))
+         (queue-callback (thunk (send error-view refresh)))]
       [other (error "Unknown tab")]))
+  (define (set-tab i)
+    (set! current-tab i)
+    (update-tab))
 
   (define frame
     (new frame%
@@ -333,12 +368,10 @@
          [parent global-context]))
   (define proof-view
     (new presentation-pict-canvas%
-         [parent global-context]
-         [style '(deleted)]))
+         [parent global-context]))
   (define error-view
     (new presentation-pict-canvas%
-         [parent global-context]
-         [style '(deleted)]))
+         [parent global-context]))
   (define proof-script
     (new (class proof-script-text%
            (super-new)
@@ -418,7 +451,29 @@
 
   (update-views)
 
-  (send frame show #t))
+  (send frame show #t)
+  ;; After show because otherwise the secondary tabs are first drawn
+  ;; when they are shown during a window resize. This would be nice to
+  ;; diagnose and fix!
+  (set-tab 0))
+
+(define (display-binding id [parent #f])
+  (match (identifier-binding id)
+    [(list source-mod source-id nominal-source-mod nominal-source-id source-phase import-phase nominal-export-phase)
+     (message-box (format "Info: ~s" (syntax-e id))
+                  (format "Name: ~s\nSource module: ~s"
+                          (syntax-e id)
+                          source-mod))]
+    [other (message-box (format "No info for ~s" (syntax-e id))
+                        (format "There is no global binding information for ~s."
+                                (syntax-e id))
+                        parent
+                        '(caution ok))]))
+
+(send (current-presentation-context) register-command-translator free-identifier/p
+      (lambda (id)
+        (list (list "Binding information" (thunk (display-binding id)
+                                                 (void))))))
 
 (module+ main
   (module stlc-prover-context racket/base
@@ -431,7 +486,7 @@
     (provide stlc-anchor g (rename-out [assumption stlc-assumption]))
 
     (define-namespace-anchor stlc-anchor)
-    (define g #'(--> String Int)))
+    (define g #'(--> String (--> String Int))))
 
   (require
    'stlc-prover-context)
