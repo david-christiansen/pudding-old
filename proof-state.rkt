@@ -16,6 +16,7 @@
          uninstantiated?
          get-focus
          set-focus
+         get-zipper
          at-top?
          prove
          move
@@ -103,6 +104,10 @@
 
 (define (set-focus val)
   (edit-focus (thunk* val)))
+
+(define/proof get-zipper
+  (<- (proof-state _ z) get)
+  (pure z))
 
 (define (move . procs)
   (proof

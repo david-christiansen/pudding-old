@@ -61,7 +61,7 @@
             (ghost (text "()"))
             (filled-ellipse 3 3 #:color "black"))
            (apply hb-append
-                  (add-between (map (lambda (h) (hyp->pict h canvas)) H)
+                  (add-between (map (lambda (h) (hyp->pict h canvas)) (reverse H))
                                (text ", ")))))
      (define G-pict
        (term->pict G canvas))
@@ -73,7 +73,7 @@
      (define context-pict
        (apply vl-append
               5
-              (for/list ([h H])
+              (for/list ([h (reverse H)])
                 (hyp->pict h canvas))))
      (define goal-pict
        (term->pict G canvas))
@@ -81,8 +81,8 @@
      (define line (filled-rectangle width 1 #:draw-border? #t))
      (vl-append 10 context-pict line goal-pict )]))
 
-(define (on-box pict #:color [color "white"])
-  (cc-superimpose (filled-rectangle (pict-width pict) (pict-height pict) #:color color)
+(define (on-box pict #:color [color "white"] #:border-width [border-width #f])
+  (cc-superimpose (filled-rectangle (pict-width pict) (pict-height pict) #:color color #:border-width border-width)
                   pict))
 
 (define (opaque pict)
@@ -91,12 +91,43 @@
                                     #:draw-border? #f)
                   pict))
 
-(define (proof->pict proof canvas [indent-steps 0])
-  (define hspace 5)
-  (define vspace 10)
+;;; Given a proof zipper, return a procedure that takes a pict
+;;; representing the focus and its indentation and returns a pict
+;;; representing the whole tree.
+
+(define proof-vspace 10)
+
+(define (indent-proof-pict p)
   (define indent-space 20)
+  (inset p indent-space 0 0 0))
+
+(define (proof-context->pict->pict ctxt canvas)
+  (lambda (focus-pict)
+    (match ctxt
+      [(list)
+       focus-pict]
+      [(cons (list-item-frame to-left to-right) more)
+       (define before
+         (map (lambda (p) (proof->pict p canvas))
+              (reverse to-left)))
+       (define after
+         (map (lambda (p) (proof->pict p canvas))
+              to-right))
+       (define siblings
+         (apply vl-append proof-vspace
+                (append before (list focus-pict) after)))
+       ((proof-context->pict->pict more canvas)
+        siblings)]
+      [(cons prf-frame more)
+       (match-define (zipper wrapped new-ctxt) (up (zipper focus-pict (cons prf-frame more))))
+       ((proof-context->pict->pict new-ctxt canvas)
+        (proof->pict wrapped canvas))])))
+
+(define (proof->pict proof canvas #:focus? [focus? #f])
+  (define hspace 5)
   (define by (text "by" '(bold)))
   (define left (text "<=" '(bold)))
+  (define bw (if focus? 3 #f))
   (define (mv n)
     (send canvas make-presentation n metavariable/p
           (opaque (text (format "~v" n)))
@@ -105,11 +136,11 @@
     (match step
       [(or (refined-step _ _ _ children _)
            (complete-proof _ _ _ children))
-       (apply vl-append
-              vspace
-              pict
-              (for/list ([c children])
-                (proof->pict c canvas (add1 indent-steps))))]
+       (apply vl-append proof-vspace pict
+              (if (pict? children)
+                  (list (indent-proof-pict children))
+                  (for/list ([c children])
+                    (indent-proof-pict (proof->pict c canvas)))))]
       [_ pict]))
   (define step-pict
     (match proof
@@ -123,7 +154,7 @@
                          left
                          (sequent->pict goal canvas))
                         3))
-       (on-box p)]
+       (on-box p #:border-width bw)]
       [(refined-step name goal rule children extractor)
        (define status (text "➥" '(bold)))
        (define n (mv name))
@@ -137,7 +168,7 @@
                                (hb-append hspace by (term->pict rule canvas))
                                empty))
                 3))
-       (on-box p)]
+       (on-box p #:border-width bw)]
       [(complete-proof goal rule extract children)
        (define status (text "✔" '(bold)))
        (inset (hb-append hspace
@@ -146,11 +177,14 @@
                          left
                          (sequent->pict goal canvas))
               3)]
+      [(? pict? a-pict)
+       ;; This is a bit of a hack, but it lets this be easily used
+       ;; with the zipper-traversing code
+       a-pict]
       [other (on-box (text (format "~v" other)))]))
-  (inset (send canvas make-presentation proof proof-step/p
-               (with-children proof step-pict)
-               hl)
-         (* indent-space indent-steps) 0 0 0))
+  (send canvas make-presentation proof proof-step/p
+        (with-children proof step-pict)
+        hl))
 
 (define (pprint-term stx canvas)
   (syntax-parse stx
@@ -420,11 +454,15 @@
     (new editor-canvas% [parent horiz] [editor proof-script]))
 
   (define (update-views)
-    (define focus (run-action get-focus))
+    (define z (run-action get-zipper))
+    (define focus (zipper-focus z))
     (send program-view remove-all-picts)
     (send program-view add-pict (extract-pict focus program-view) 5 5)
     (send proof-view remove-all-picts)
-    (send proof-view add-pict (proof->pict focus proof-view) 5 5)
+    (send proof-view add-pict
+          ((proof-context->pict->pict (zipper-context z) proof-view)
+           (proof->pict focus proof-view #:focus? #t))
+          5 5)
     (send node-context remove-all-picts)
     (with-handlers ([exn? displayln])
       (send node-context add-pict
