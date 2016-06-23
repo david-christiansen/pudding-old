@@ -2,7 +2,7 @@
 
 (require syntax/parse)
 
-(provide decorate-identifiers find-bindings)
+(provide decorate-identifiers find-bindings get-occurrence-id)
 
 (define my-id-prop (gensym 'expander-id))
 
@@ -42,6 +42,10 @@
           [else stx]))))
 
 (define-syntax LAMBDA (syntax-rules () [(_ (x ...) body) (lambda (x ...) body)]))
+
+(define/contract (get-occurrence-id id)
+  (-> identifier? (or/c symbol? #f))
+  (syntax-property id my-id-prop))
 
 ;;; Return a mapping from internal identifier IDs to either `(bound
 ;;; ,ID) if it is bound by ID, `(bound #f) if it is bound by something
@@ -149,7 +153,8 @@
                      (list `(,my-id bound ,(cdr b)))
                      (list `(,my-id free)))
              '())]
-    [other (error "unknown case" #'other)]))
+    [other #;(error "unknown case" #'other)
+           '()]))
 
 (define foo #'(LAMBDA (x) (+ x x)))
 (define my-x #'x)
