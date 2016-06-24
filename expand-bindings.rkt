@@ -25,7 +25,7 @@
 (define (decorate-identifiers stx)
   (if (identifier? stx)
       (if (syntax-property stx my-id-prop)
-          (stx)
+          stx
           (syntax-property stx my-id-prop (gensym 'id)))
       (let ([contents (syntax-e stx)])
         (cond
@@ -47,13 +47,26 @@
   (-> identifier? (or/c symbol? #f))
   (syntax-property id my-id-prop))
 
+(define/contract (find-id id bindings)
+  (-> identifier? (listof identifier?) (or/c #f symbol?))
+  (define mem (member id bindings bound-identifier=?))
+  (and mem
+       (syntax-property (car mem) my-id-prop)))
+
 ;;; Return a mapping from internal identifier IDs to either `(bound
 ;;; ,ID) if it is bound by ID, `(bound #f) if it is bound by something
 ;;; not in the source, or `(free) if it is not bound in the expansion,
 ;;; or `(binding) if it's a binding site.
 ;;;
 ;;; bindings is a list of identifiers bound in this scope.
-(define (find-bindings stx [bindings '()])
+(define/contract (find-bindings stx [bindings '()])
+  (->* (syntax?)
+       ((listof identifier?))
+       (listof (cons/c symbol?
+                       (or/c (list/c 'bound symbol?)
+                             (list/c 'bound #f)
+                             (list/c 'free)
+                             (list/c 'binding)))))
   (define (under-bindings formals body)
     (let* ([bs (if (identifier? formals)
                    (list formals)
@@ -65,18 +78,22 @@
       (apply append
              (for/list ([x bound-ids]
                         #:when (cdr x))
-               (list `(,(cdr x) binding)))
+               `(,(cdr x) binding))
              (for/list ([b body])
-               (find-bindings b (append bound-ids bindings))))))
+               (find-bindings b (append (reverse bs) bindings))))))
   (syntax-parse stx
     #:literal-sets (kernel-literals)
     ;; top-level forms
     [(#%expression expr)
      (find-bindings #'expr bindings)]
     [(module m:id p (#%plain-module-begin form ...))
-     (apply append find-bindings (syntax->list #'(form ...)))]
+     (apply append
+            (map (lambda (e) (find-bindings e bindings))
+                 (syntax->list #'(form ...))))]
     [(begin-for-syntax form ...)
-     (apply append find-bindings (syntax->list #'(form ...)))]
+     (apply append
+            (map (lambda (e) (find-bindings e bindings))
+                 (syntax->list #'(form ...))))]
 
     ;; module-level forms
     [(#%provide spec ...) '()]
@@ -149,8 +166,8 @@
     [other
      #:when (identifier? #'other)
      (if-let (my-id (syntax-property #'other my-id-prop))
-             (if-let (b (assoc #'other bindings bound-identifier=?))
-                     (list `(,my-id bound ,(cdr b)))
+             (if-let (b (find-id #'other bindings))
+                     (list `(,my-id bound b))
                      (list `(,my-id free)))
              '())]
     [other #;(error "unknown case" #'other)

@@ -6,21 +6,24 @@
 (require syntax/parse
          (only-in syntax/id-set immutable-bound-id-set immutable-free-id-set))
 (require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt" "metavariables.rkt" "expand-bindings.rkt")
-
+(require macro-debugger/expand)
 (require framework)
 
 ;; Binding stuff
-(define (decorate-hyp h)
+(define/contract (decorate-hyp h)
+  (-> hypothesis? hypothesis?)
   (match h
     [(hypothesis name assumption relevant?)
      (hypothesis (decorate-identifiers name) (decorate-identifiers assumption) relevant?)]))
 
 (define (decorate-sequent g)
+  (-> sequent? sequent?)
   (match g
     [(>> H G)
      (>> (map decorate-hyp H) (decorate-identifiers G))]))
 
-(define (decorate-proof p)
+(define/contract (decorate-proof p)
+  (-> proof-step? proof-step?)
   (match p
     [(dependent-subgoal waiting-for next)
      (dependent-subgoal waiting-for (lambda (ext) (decorate-proof (next ext))))]
@@ -41,7 +44,8 @@
                    (lambda args (decorate-identifiers (apply extractor args))))]))
 
 ;; Highlights
-(define (hl pict)
+(define/contract (hl pict)
+  (-> pict? pict?)
   (let ([w (pict-width pict)]
         [h (pict-height pict)])
     (frame (cc-superimpose
@@ -83,7 +87,11 @@
           (hash-ref! bindings id (thunk (bound-identifier/p id)))
           unknown-identifier/p))))
 
-(define (hyp->pict h canvas)
+(define/contract (hyp->pict h canvas prev)
+  (-> hypothesis?
+      (is-a?/c presentation-pict-canvas%)
+      (listof hypothesis?)
+      pict?)
   (match h
     [(hypothesis name assumption relevant?)
      (define h-id (get-occurrence-id name))
@@ -92,14 +100,15 @@
              (text (format "~a" (syntax-e name)))
              hl))
      (define assumption-pict
-       (term->pict assumption canvas))
+       (term->pict assumption canvas (map hypothesis-name prev)))
      (define (wrap p)
        (if relevant?
-           (hb-append (text "[") p (text "]"))
-           p))
+           p
+           (hb-append (text "[") p (text "]"))))
      (wrap (hb-append name-pict (text " : ") assumption-pict))]))
 
-(define (sequent->pict seq canvas)
+(define/contract (sequent->pict seq canvas)
+  (-> sequent? (is-a?/c presentation-pict-canvas%) pict?)
   (match seq
     [(>> H G)
      (define H-pict
@@ -108,22 +117,33 @@
             (ghost (text "()"))
             (filled-ellipse 3 3 #:color "black"))
            (apply hb-append
-                  (add-between (map (lambda (h) (hyp->pict h canvas)) (reverse H))
+                  (add-between (reverse
+                                (let loop ([hyps H])
+                                  (if (null? hyps)
+                                      '()
+                                      (cons (hyp->pict (car hyps) canvas (cdr hyps))
+                                            '() #;(loop (cdr hyps))
+                                            ))))
                                (text ", ")))))
      (define G-pict
-       (term->pict G canvas (find-bindings G (map hypothesis-name H))))
+       (term->pict G canvas (map hypothesis-name H)))
      (hb-append H-pict (text " >> ") G-pict)]))
 
-(define (sequent->big-pict seq canvas)
+(define/contract (sequent->big-pict seq canvas)
+  (-> sequent? (is-a?/c presentation-pict-canvas%) pict?)
   (match seq
     [(>> H G)
      (define context-pict
        (apply vl-append
               5
-              (for/list ([h (reverse H)])
-                (hyp->pict h canvas))))
+              (reverse
+               (let loop ([hyps H])
+                 (if (null? hyps)
+                     '()
+                     (cons (hyp->pict (car hyps) canvas (cdr hyps))
+                           (loop (cdr hyps))))))))
      (define goal-pict
-       (term->pict G canvas))
+       (term->pict G canvas (map hypothesis-name H)))
      (define width (max (pict-width context-pict) (pict-width goal-pict)))
      (define line (filled-rectangle width 1 #:draw-border? #t))
      (vl-append 10 context-pict line goal-pict )]))
@@ -166,11 +186,15 @@
        ((proof-context->pict->pict more canvas)
         siblings)]
       [(cons prf-frame more)
-       (match-define (zipper wrapped new-ctxt) (up (zipper focus-pict (cons prf-frame more))))
+       (match-define (zipper wrapped new-ctxt)
+         (up (zipper focus-pict (cons prf-frame more))))
        ((proof-context->pict->pict new-ctxt canvas)
         (proof->pict wrapped canvas))])))
 
-(define (proof->pict proof canvas #:focus? [focus? #f])
+(define/contract (proof->pict proof canvas #:focus? [focus? #f])
+  (->* (proof-step? (is-a?/c presentation-pict-canvas%))
+       (#:focus? boolean?)
+       pict?)
   (define hspace 5)
   (define by (text "by" '(bold)))
   (define left (text "<=" '(bold)))
@@ -179,7 +203,10 @@
     (send canvas make-presentation n metavariable/p
           (opaque (text (format "~v" n)))
           hl))
-  (define (with-children step pict)
+  (define/contract (with-children step pict)
+    (-> proof-step?
+        pict?
+        pict?)
     (match step
       [(or (refined-step _ _ _ children _)
            (complete-proof _ _ _ children))
@@ -189,7 +216,8 @@
                   (for/list ([c children])
                     (indent-proof-pict (proof->pict c canvas)))))]
       [_ pict]))
-  (define step-pict
+  (define/contract step-pict
+    pict?
     (match proof
       [(subgoal name goal)
        (define status (text "?" '(bold)))
@@ -202,7 +230,7 @@
                          (sequent->pict goal canvas))
                         3))
        (on-box p #:border-width bw)]
-      [(refined-step name goal rule children extractor)
+      [(refined-step name (>> H G) rule children extractor)
        (define status (text "➥" '(bold)))
        (define n (mv name))
        (define p
@@ -210,19 +238,24 @@
                            status
                            n
                            left
-                           (sequent->pict goal canvas)
+                           (sequent->pict (>> H G) canvas)
                            (if rule
-                               (hb-append hspace by (term->pict rule canvas))
+                               (hb-append hspace
+                                          by
+                                          (term->pict
+                                           (datum->syntax #f rule)
+                                           canvas
+                                           (map hypothesis-name H)))
                                empty))
                 3))
        (on-box p #:border-width bw)]
-      [(complete-proof goal rule extract children)
+      [(complete-proof (>> H G) rule extract children)
        (define status (text "✔" '(bold)))
        (inset (hb-append hspace
                          status
-                         (term->pict extract canvas)
+                         (term->pict extract canvas (map hypothesis-name H))
                          left
-                         (sequent->pict goal canvas))
+                         (sequent->pict (>> H G) canvas))
               3)]
       [(? pict? a-pict)
        ;; This is a bit of a hack, but it lets this be easily used
@@ -234,6 +267,14 @@
         hl))
 
 (define (pprint-term stx canvas bindings)
+  (-> syntax?
+      (is-a?/c presentation-pict-canvas%)
+      (listof (cons/c symbol?
+                       (or/c (list/c 'bound symbol?)
+                             (list/c 'bound #f)
+                             (list/c 'free)
+                             (list/c 'binding))))
+      any/c)
   (syntax-parse stx
     #:literals (lambda)
     [x:id
@@ -241,10 +282,12 @@
      (define p-type
        (cond [x-id
               (match (assoc x-id bindings)
-                [(list 'bound binder-id) (binding/p binder-id)]
-                [(list 'free) free-identifier/p]
-                [(list 'binding) (binding/p x-id)]
-                [#f (displayln #'x) unknown-identifier/p])]
+                [(list _ 'bound binder-id) (binding/p binder-id)]
+                [(list _ 'free) free-identifier/p]
+                [(list _ 'binding) (binding/p x-id)]
+                [#f
+                 (displayln `(what is ,(syntax->datum #'x)))
+                 unknown-identifier/p])]
              [(list? (identifier-binding #'x))
               free-identifier/p]
              [else unknown-identifier/p]))
@@ -285,21 +328,24 @@
     [other
      (pp:text (format "~v" (syntax->datum #'other)))]))
 
-(define (term->pict stx canvas bound-identifiers)
+(define/contract (term->pict stx canvas bound-identifiers)
+  (-> syntax? (is-a?/c presentation-pict-canvas%) (listof identifier?) pict?)
   (define (string->pict x)
     (if (string? x)
         (let ([lines (string-split x "\n" #:trim? #f)])
           (for/fold ([pict (blank)]) ([l lines])
             (vl-append pict (opaque (text l)))))
         x))
-  (define bindings (find-bindings stx bound-identifiers))
+  ;; TODO put expand in the right namespace
+  (define bindings (find-bindings (expand stx) bound-identifiers))
   (pp:pretty-markup
    (pprint-term stx canvas bindings)
    (lambda (x y)
      (hb-append (string->pict x) (string->pict y)))
    70))
 
-(define (extract-pict focus canvas)
+(define/contract (extract-pict focus canvas)
+  (-> proof-step? (is-a?/c presentation-pict-canvas%) pict?)
   (define (get-extract+hyp-names f)
     (match f
       [(subgoal n (>> H _))
@@ -319,7 +365,7 @@
                (map hypothesis-name H))]
       [_ (blank)]))
   (define-values (ext hyp-names) (get-extract+hyp-names focus))
-  (term->pict ext canvas (find-bindings ext hyp-names)))
+  (term->pict ext canvas hyp-names))
 
 (define (read-with-length-from str)
   (define port (open-input-string str))

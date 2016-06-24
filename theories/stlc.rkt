@@ -14,15 +14,15 @@
 
 (define-namespace-anchor stlc)
 
-;; These definitions aren't really used for anything. They're here to
-;; get a top-level binding for use in syntax objects representing
-;; types.
-(define-syntax (Int stx)
-  (raise-syntax-error #f "Type used out of context"))
-(define-syntax (String stx)
-  (raise-syntax-error #f "Type used out of context"))
-(define-syntax (--> stx)
-  (raise-syntax-error #f "Type used out of context"))
+(struct Int ())
+(struct String ())
+(struct --> (dom cod))
+;; (define-syntax (Int stx)
+;;   (raise-syntax-error #f "Type used out of context"))
+;; (define-syntax (String stx)
+;;   (raise-syntax-error #f "Type used out of context"))
+;; (define-syntax (--> stx)
+;;   (raise-syntax-error #f "Type used out of context"))
 
 (define-match-expander type
   (lambda (stx)
