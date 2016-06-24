@@ -4,7 +4,7 @@
 
 (provide decorate-identifiers find-bindings get-occurrence-id)
 
-(define my-id-prop (gensym 'expander-id))
+(define my-id-prop 'binder-finder-identifer)
 
 (define-syntax if-let
   (syntax-rules ()
@@ -22,12 +22,18 @@
      (cons (decorate-identifiers (car v))
            (decorate-identifiers-in-cdr (cdr v)))]))
 
+(define unique-id
+  (let ([unique-counter -1])
+    (thunk (set! unique-counter (add1 unique-counter))
+           unique-counter)))
+
 (define (decorate-identifiers stx)
   (if (identifier? stx)
       (if (syntax-property stx my-id-prop)
           stx
-          (syntax-property stx my-id-prop (gensym 'id)))
+          (syntax-property stx my-id-prop (unique-id) #t))
       (let ([contents (syntax-e stx)])
+        (displayln contents)
         (cond
           [(pair? contents)
            (datum->syntax stx (cons (decorate-identifiers (car contents))
@@ -44,11 +50,11 @@
 (define-syntax LAMBDA (syntax-rules () [(_ (x ...) body) (lambda (x ...) body)]))
 
 (define/contract (get-occurrence-id id)
-  (-> identifier? (or/c symbol? #f))
+  (-> identifier? (or/c exact-nonnegative-integer? #f))
   (syntax-property id my-id-prop))
 
 (define/contract (find-id id bindings)
-  (-> identifier? (listof identifier?) (or/c #f symbol?))
+  (-> identifier? (listof identifier?) (or/c #f exact-nonnegative-integer?))
   (define mem (member id bindings bound-identifier=?))
   (and mem
        (syntax-property (car mem) my-id-prop)))
@@ -62,8 +68,8 @@
 (define/contract (find-bindings stx [bindings '()])
   (->* (syntax?)
        ((listof identifier?))
-       (listof (cons/c symbol?
-                       (or/c (list/c 'bound symbol?)
+       (listof (cons/c exact-nonnegative-integer?
+                       (or/c (list/c 'bound exact-nonnegative-integer?)
                              (list/c 'bound #f)
                              (list/c 'free)
                              (list/c 'binding)))))
@@ -167,7 +173,7 @@
      #:when (identifier? #'other)
      (if-let (my-id (syntax-property #'other my-id-prop))
              (if-let (b (find-id #'other bindings))
-                     (list `(,my-id bound b))
+                     (list `(,my-id bound ,b))
                      (list `(,my-id free)))
              '())]
     [other #;(error "unknown case" #'other)
