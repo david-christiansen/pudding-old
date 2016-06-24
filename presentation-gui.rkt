@@ -7,6 +7,8 @@
          (only-in syntax/id-set immutable-bound-id-set immutable-free-id-set))
 (require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt" "metavariables.rkt" "expand-bindings.rkt")
 (require macro-debugger/expand)
+(require macro-debugger/syntax-browser)
+(require macro-debugger/stepper)
 (require framework)
 
 ;; Binding stuff
@@ -86,6 +88,9 @@
       (if id
           (hash-ref! bindings id (thunk (bound-identifier/p id)))
           unknown-identifier/p))))
+
+(define expression/p
+  (make-presentation-type 'expression/p))
 
 (define/contract (hyp->pict h canvas prev)
   (-> hypothesis?
@@ -270,10 +275,10 @@
   (-> syntax?
       (is-a?/c presentation-pict-canvas%)
       (listof (cons/c symbol?
-                       (or/c (list/c 'bound symbol?)
-                             (list/c 'bound #f)
-                             (list/c 'free)
-                             (list/c 'binding))))
+                      (or/c (list/c 'bound symbol?)
+                            (list/c 'bound #f)
+                            (list/c 'free)
+                            (list/c 'binding))))
       any/c)
   (syntax-parse stx
     #:literals (lambda)
@@ -321,10 +326,15 @@
              (pprint-term #'body canvas)))
       pp:rparen)]
     [(tm ...)
-     (pp:h-append pp:lparen
-                  (pp:v-concat/s (map (lambda (t) (pprint-term t canvas bindings))
-                                      (syntax-e #'(tm ...))))
-                  pp:rparen)]
+     (pp:markup
+      (lambda (p)
+        (send canvas make-presentation #'(tm ...) expression/p
+              p
+              hl))
+      (pp:h-append pp:lparen
+                   (pp:v-concat/s (map (lambda (t) (pprint-term t canvas bindings))
+                                       (syntax-e #'(tm ...))))
+                   pp:rparen))]
     [other
      (pp:text (format "~v" (syntax->datum #'other)))]))
 
@@ -338,6 +348,8 @@
         x))
   ;; TODO put expand in the right namespace
   (define bindings (find-bindings (expand stx) bound-identifiers))
+  (displayln `(b ,stx ,bindings))
+  (expand/step stx)
   (pp:pretty-markup
    (pprint-term stx canvas bindings)
    (lambda (x y)
@@ -620,6 +632,15 @@
       (lambda (id)
         (list (list "Binding information" (thunk (display-binding id)
                                                  (void))))))
+
+(send (current-presentation-context) register-command-translator expression/p
+      (lambda (val)
+          (if (syntax? val)
+              (list
+               (list "Macro Stepper" (thunk (expand/step val)))
+               (list "Syntax Browser" (thunk (browse-syntax val))))
+              (list))))
+
 
 (module+ main
   (module stlc-prover-context racket/base
