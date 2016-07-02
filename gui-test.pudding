@@ -1,0 +1,37 @@
+
+
+
+(proof 
+ (refine (function-intro 'x))
+ (move down/proof-step-children down/list-first)
+
+ (refine (function-intro 'x))
+ (move down/proof-step-children down/list-first)
+
+ (refine (addition 2))
+ (move down/proof-step-children down/list-first)
+
+ (refine length-of-string)
+ (move down/proof-step-children down/list-first)
+ (refine (assumption 0))
+ solve
+ (move up up)
+ solve
+
+ (move right/list)
+ (refine length-of-string)
+ (move down/proof-step-children down/list-first)
+ (refine (assumption 1))
+ solve
+ (move up up)
+ solve
+
+ (move up up)
+ solve
+
+ (move up up)
+ solve
+
+ (move up up)
+ solve
+ )
