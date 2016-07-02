@@ -256,12 +256,13 @@
        (on-box p #:border-width bw)]
       [(complete-proof (>> H G) rule extract children)
        (define status (text "✔" '(bold)))
-       (inset (hb-append hspace
-                         status
-                         (term->pict extract canvas (map hypothesis-name H))
-                         left
-                         (sequent->pict (>> H G) canvas))
-              3)]
+       (on-box (inset (hb-append hspace
+                                 status
+                                 (term->pict extract canvas (map hypothesis-name H))
+                                 left
+                                 (sequent->pict (>> H G) canvas))
+                      3)
+               #:border-width bw)]
       [(? pict? a-pict)
        ;; This is a bit of a hack, but it lets this be easily used
        ;; with the zipper-traversing code
@@ -290,9 +291,7 @@
                 [(list _ 'bound binder-id) (binding/p binder-id)]
                 [(list _ 'free) free-identifier/p]
                 [(list _ 'binding) (binding/p x-id)]
-                [#f
-                 (displayln `(what is ,(syntax->datum #'x)))
-                 unknown-identifier/p])]
+                [#f free-identifier/p])]
              [(list? (identifier-binding #'x))
               free-identifier/p]
              [else unknown-identifier/p]))
@@ -346,10 +345,9 @@
           (for/fold ([pict (blank)]) ([l lines])
             (vl-append pict (opaque (text l)))))
         x))
+  (set! stx (decorate-identifiers stx))
   ;; TODO put expand in the right namespace
   (define bindings (find-bindings (expand stx) bound-identifiers))
-  (displayln `(b ,stx ,bindings))
-  (expand/step stx)
   (pp:pretty-markup
    (pprint-term stx canvas bindings)
    (lambda (x y)
@@ -658,4 +656,5 @@
   (require
    'stlc-prover-context)
 
-  (prover-window (namespace-anchor->namespace stlc-anchor) (decorate-identifiers g)))
+  (parameterize ([current-namespace (namespace-anchor->namespace stlc-anchor)])
+    (prover-window (namespace-anchor->namespace stlc-anchor) (decorate-identifiers g))))

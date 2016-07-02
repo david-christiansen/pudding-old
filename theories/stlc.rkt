@@ -150,7 +150,7 @@
                             hyps)
                       cod)])
            (lambda (#,(new-scope #'x 'add))
-             #,(new-scope #'body 'add))])))
+             body)])))
 
 ;; TODO - rewrite using dependent refinement
 (define/contract ((application dom) proof-goal)

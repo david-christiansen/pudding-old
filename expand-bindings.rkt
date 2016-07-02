@@ -33,7 +33,6 @@
           stx
           (syntax-property stx my-id-prop (unique-id) #t))
       (let ([contents (syntax-e stx)])
-        (displayln contents)
         (cond
           [(pair? contents)
            (datum->syntax stx (cons (decorate-identifiers (car contents))
