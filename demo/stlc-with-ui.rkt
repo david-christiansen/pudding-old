@@ -31,14 +31,14 @@
   (define test-input
     (string-append
      "(refine (function-intro 'x))\n"
-     "(move down/refined-step-children down/list-first)\n"
+     "(move (down/proof))\n"
      "(refine length-of-string)\n"
-     "(move down/refined-step-children down/list-first)\n"
+     "(move (down/proof))\n"
      "(refine (assumption 0))\n"
      "solve\n"
-     "(move up up)\n"
+     "(move up)\n"
      "solve\n"
-     "(move up up)\n"
+     "(move up)\n"
      "solve\n"
      ":done"))
 

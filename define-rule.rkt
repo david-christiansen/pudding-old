@@ -168,10 +168,11 @@
                          (syntax->list #'(scopes ...)))])
        #`(lambda (st)
            (let (scope-bindings ...)
-               (match st
-                 alternatives ...
-                 [other (proof-fail (make-exn:fail failure-message
-                                                   (current-continuation-marks)))]))))]))
+             (match st
+               alternatives ...
+               [other (proof-fail (make-exn:fail:cant-refine failure-message
+                                                             (current-continuation-marks)
+                                                             other))]))))]))
 
 (define-syntax (define-rule stx)
   (syntax-parse stx
@@ -286,57 +287,65 @@
 
   (define prf-1
     (proof-eval (proof (refine Σ-intro)
-                       (move down/refined-step-children down/list-first)
+                       (move (down/proof))
                        (refine Bool-intro-1)
                        solve
-                       (move right/list)
+                       (move right/proof)
+                       dependent
                        (refine So-intro)
                        solve
-                       (move up up)
+                       (move up)
                        solve
                        get-focus)
                 (init-proof-state (>> null #'(Σ (y Bool) (So y))))))
   (check-equal? (syntax->datum (complete-proof-extract prf-1))
                 '(cons #t (void)))
+
   (define prf-2
     (thunk (proof-eval (proof (refine Σ-intro)
-                              (move down/refined-step-children down/list-first)
+                              (move (down/proof))
                               (refine Bool-intro-2)
                               solve
-                              (move right/list)
+                              (move right/proof)
+                              dependent
                               (refine So-intro)
                               solve
-                              (move up up)
+                              (move up)
                               solve
                               get-focus)
                        (init-proof-state (>> null #'(Σ (y Bool) (So y)))))))
   (check-exn exn:fail? prf-2)
+
   (define Bool-pair-type
     (complete-proof-extract
      (proof-eval (proof (refine (Σ-formation 't))
-                        (move down/refined-step-children down/list-first)
+                        (move (down/proof))
                         (refine Bool-formation)
                         solve
-                        (move right/list)
+                        (move right/proof)
+                        dependent
                         (refine Bool-formation)
                         solve
-                        (move up up)
+                        (move up)
                         solve
                         get-focus)
                  (init-proof-state (>> null #'Type)))))
+
   (define pair-of-bools
     (complete-proof-extract
      (proof-eval (proof (refine Σ-intro)
-                        (move down/refined-step-children down/list-first)
+                        (move (down/proof))
                         (refine Bool-intro-1)
                         solve
-                        (move right/list)
+                        (move right/proof)
+                        dependent
                         (refine Bool-intro-2)
                         solve
-                        (move up up)
+                        (move up)
                         solve
                         get-focus)
                  (init-proof-state (>> null Bool-pair-type)))))
+  #;
   (check-equal? (syntax->datum pair-of-bools)
                 '(cons #t #f)))
 

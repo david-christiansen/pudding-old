@@ -70,8 +70,7 @@
                           [label name]
                           [enabled ready?]
                           [callback (thunk*
-                                     (proof-runner (move down/proof-step-children
-                                                         (down/list-ref i))))]))
+                                     (proof-runner (move (down/proof i))))]))
       (define label (new message% [parent row]
                          [label (format "~a" (show-sequent goal))]))
       (void))

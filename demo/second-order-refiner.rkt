@@ -22,11 +22,11 @@
 
 (define/refiner identity #`(has-type #,(add-type-scopes #'(∀ α (→ α α))))
   (refine Forall-intro)
-  (move down/refined-step-children down/list-first)
+  (move (down/proof))
   (refine (function-intro 'x))
-  (move down/refined-step-children down/list-first)
+  (move (down/proof))
   (solve-with (assumption 0))
-  (move up up)
+  (move up)
   solve
-  (move up up)
+  (move up)
   solve)

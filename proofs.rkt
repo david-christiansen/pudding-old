@@ -9,13 +9,11 @@
          (struct-out subgoal)
          (struct-out complete-proof)
          (struct-out refined-step)
-         (struct-zipper-out
-          dependent-subgoal
-          irrelevant-subgoal
-          subgoal
-          complete-proof
-          refined-step)
-         down/proof-step-children
+         ;; Zipper stuff
+         down/proof
+         left/proof
+         right/proof
+         ;; General accessors
          proof-step-goal
          proof-step?
          proof-step-children)
@@ -49,12 +47,131 @@
 ;;; complete proofs.
 (struct refined-step (name goal rule children extractor) #:transparent)
 
+;;; A zipper frame pointing at a particular child of a refined node
+(struct refined-step-frame
+  (name goal rule left-children right-children extractor)
+  #:transparent
+  #:property prop:zipper-frame
+  (lambda (frame focus)
+    (match-define (refined-step-frame name goal rule l r ext)
+      frame)
+    (refined-step name goal rule (append (reverse l) (list focus) r) ext)))
 
-(define-struct-zipper-frames
-  dependent-subgoal
-  irrelevant-subgoal
-  subgoal
-  complete-proof refined-step)
+;;; A zipper frame pointing at a particular child of a complete proof
+(struct complete-proof-frame
+  (goal rule extract left-children right-children)
+  #:transparent
+  #:property prop:zipper-frame
+  (lambda (frame focus)
+    (match-define (complete-proof-frame goal rule extract l r)
+      frame)
+    (complete-proof goal rule extract (append (reverse l) (list focus) r))))
+
+(define (down/proof [which 0])
+  (zipper-movement
+   (lambda (z)
+     (match z
+       [(zipper (refined-step
+                 name goal rule
+                 (? (lambda (cs) (> (length cs) which)) children)
+                 ext)
+                context)
+        (define-values (l r) (split-at children which))
+        (define c (car r))
+        (zipper c (cons (refined-step-frame
+                         name goal rule
+                         (reverse l) (cdr r) ext)
+                        context))]
+       [(zipper (complete-proof
+                 goal rule extract
+                 (? (lambda (cs) (> (length cs) which)) children))
+                context)
+        (define-values (l r) (split-at children which))
+        (define c (car r))
+        (zipper c (cons (complete-proof-frame
+                         goal rule extract
+                         (reverse l) (cdr r))
+                        context))]
+       [(zipper focus _)
+        (raise-argument-error 'down/proof
+                              (symbol->string "proof with children")
+                              focus)]))
+   (lambda (z)
+     (match (zipper-focus z)
+       [(refined-step _ _ _ children _) (> (length children) which)]
+       [(complete-proof _ _ _ children) (> (length children) which)]
+       [_ #f]))))
+
+(define left/proof
+  (zipper-movement
+   (lambda (z)
+     (match z
+       [(zipper x (cons (refined-step-frame
+                         name goal rule (cons l ls) rs ext)
+                        context))
+        (zipper l (cons (refined-step-frame
+                         name goal rule ls (cons x rs) ext)
+                        context))]
+       [(zipper x (cons (refined-step-frame
+                         name goal rule (list) rs ext)
+                        context))
+        (raise-argument-error 'left/proof
+                              (symbol->string 'pair?)
+                              '())]
+       [(zipper x (cons (complete-proof-frame
+                         goal rule extract (cons l ls) rs)
+                        context))
+        (zipper l (cons (complete-proof-frame
+                         goal rule extract ls (cons x rs))
+                        context))]
+       [(zipper x (cons (complete-proof-frame
+                         goal rule extract (list) rs)
+                        context))
+        (raise-argument-error 'left/proof
+                              (symbol->string 'pair?)
+                              '())]))
+   (lambda (z)
+     (match (zipper-context z)
+       [(cons (or (refined-step-frame _ _ _ (cons _ _) _ _)
+                  (complete-proof-frame _ _ _ (cons _ _) _)) _)
+        #t]
+       [_ #f]))))
+
+(define right/proof
+  (zipper-movement
+   (lambda (z)
+     (match z
+       [(zipper x (cons (refined-step-frame
+                         name goal rule ls (cons r rs) ext)
+                        context))
+        (zipper r (cons (refined-step-frame
+                         name goal rule (cons x ls) rs ext)
+                        context))]
+       [(zipper x (cons (refined-step-frame
+                         name goal rule ls (list) ext)
+                        context))
+        (raise-argument-error 'right/proof
+                              (symbol->string 'pair?)
+                              '())]
+       [(zipper x (cons (complete-proof-frame
+                         goal rule extract ls (cons r rs))
+                        context))
+        (zipper r (cons (complete-proof-frame
+                         goal rule extract (cons x ls) rs)
+                        context))]
+       [(zipper x (cons (complete-proof-frame
+                         goal rule extract ls (list))
+                        context))
+        (raise-argument-error 'right/proof
+                              (symbol->string 'pair?)
+                              '())]))
+   (lambda (z)
+     (match (zipper-context z)
+       [(cons (or (refined-step-frame _ _ _ _ (cons _ _) _)
+                  (complete-proof-frame _ _ _ _ (cons _ _))) _)
+        #t]
+       [_ #f]))))
+
 
 (define (proof-step-goal prf)
   (match prf
@@ -78,13 +195,3 @@
     [(refined-step _ _ _ cs _) cs]
     [_ #f]))
 
-(define down/proof-step-children
-  (zipper-movement
-   (lambda (z)
-     (cond [(complete-proof? (zipper-focus z))
-            (down/complete-proof-children z)]
-           [(refined-step? (zipper-focus z))
-            (down/refined-step-children z)]))
-   (lambda (z)
-     (or (complete-proof? (zipper-focus z))
-         (refined-step? (zipper-focus z))))))

@@ -3,35 +3,35 @@
 
 (proof 
  (refine (function-intro 'x))
- (move down/proof-step-children down/list-first)
+ (move (down/proof))
 
  (refine (function-intro 'x))
- (move down/proof-step-children down/list-first)
+ (move (down/proof))
 
  (refine (addition 2))
- (move down/proof-step-children down/list-first)
+ (move (down/proof))
 
  (refine length-of-string)
- (move down/proof-step-children down/list-first)
+ (move (down/proof))
  (refine (assumption 0))
  solve
- (move up up)
+ (move up)
  solve
 
  (move right/list)
  (refine length-of-string)
- (move down/proof-step-children down/list-first)
+ (move (down/proof))
  (refine (assumption 1))
  solve
- (move up up)
+ (move up)
  solve
 
- (move up up)
+ (move up)
  solve
 
- (move up up)
+ (move up)
  solve
 
- (move up up)
+ (move up)
  solve
  )

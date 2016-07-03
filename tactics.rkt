@@ -4,9 +4,9 @@
 
 (require "infrastructure.rkt" "error-handling.rkt" "proofs.rkt" "proof-state.rkt" "monad-notation.rkt")
 
-(provide begin-for-subgoals first-success proof <- pure
-         skip with-subgoals with-subgoals* tactic-trace? trace try
-         prove)
+(provide first-success proof <- pure skip
+         with-subgoals with-subgoals*
+         tactic-trace? trace try prove)
 
 (module+ test
   (require rackunit))
@@ -46,45 +46,32 @@
       (let-values ([(start rest) (split-at lst (car lengths))])
         (cons start (list-split rest (cdr lengths))))))
 
-;; Like Coq's ; tactical: first, run outer on the goal. If success,
-;; run (begin-for-subgoals inner) on each subgoal.
-(define (begin-for-subgoals outer . inner)
-  (cond [(null? inner)
-         outer]
-        [else
-         (proof outer
-                (<- focus get-focus)
-                (if (refined-step? focus)
-                    (proof
-                     (move down/refined-step-children)
-                     (proof-while
-                      (proof (<- f get-focus)
-                             (pure (pair? f)))
-                      (proof (move down/car)
-                             (apply begin-for-subgoals inner)
-                             (move up down/cdr))))
-                    (proof-fail "didn't get a refined step")))]))
-
 ;;; When the focus is on an element of a list of subgoals, refine each
-;;; of the remaining subgoals with the corresponding element of
+;;; of the subgoals to the right with the corresponding element of
 ;;; tacs. If they are different lengths, fail. On success, end with
 ;;; the focus on the parent node.
-(define (in-subgoals . tacs)
+(define (in-subgoals tacs)
   (proof
-   (<- f get-focus)
-   (if (and (list? f)
-            (= (length f) (length tacs)))
-       (proof (move down/list-first)
-              (for/proof
-               ([tac tacs])
-               tac
-               (<- can? (movement-possible? right/list))
-               (if can?
-                   (move right/list)
-                   skip))
-              (move up up))
-       (proof-fail (make-exn:fail "Mismatched tactic script length"
-                                  (current-continuation-marks))))))
+   (<- not-done? (movement-possible? right/proof))
+   (match tacs
+     [(list)
+      (proof-fail (make-exn:fail
+                   "No tactics provided to in-subgoals"
+                   (current-continuation-marks)))]
+     [(list t)
+      (if not-done?
+          (proof-fail (make-exn:fail
+                       "Ran out of tactics early"
+                       (current-continuation-marks)))
+          (proof t (move up)))]
+     [(list-rest t ts)
+      (proof t
+             (if not-done?
+                 (proof (move right/proof)
+                        (in-subgoals ts))
+                 (proof-fail (make-exn:fail
+                              "Ran out of subgoals early"
+                              (current-continuation-marks)))))])))
 
 ;;; Run outer. Each of its subgoals must have a corresponding tactic
 ;;; in inner that does not fail, or else the whole thing fails.
@@ -93,9 +80,9 @@
          (<- focus get-focus)
          (if (refined-step? focus)
              (proof
-              (move down/refined-step-children)
-              (apply in-subgoals inner))
-             (proof-fail "didn't get a refined step"))))
+              (move (down/proof))
+              (in-subgoals inner))
+             (proof-fail (make-exn:fail "didn't get a refined step" (current-continuation-marks))))))
 
 
 (define (with-subgoals* outer . inner)

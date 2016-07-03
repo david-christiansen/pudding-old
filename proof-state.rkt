@@ -23,7 +23,9 @@
          movement-possible?
          refine
          movement-possible?
-         solve)
+         solve
+         dependent
+         (struct-out exn:fail:cant-refine))
 
 (module+ test
  (require rackunit))
@@ -127,33 +129,9 @@
   (<- (proof-state _ z) get)
   (pure (can-move? direction z)))
 
-;;; Update the neighbors after a solve.
-(define update-neighbors
-  (letrec ([update-goal
-            (lambda (metas g)
-              (match g
-                [(dependent-subgoal x todo)
-                 (let ([val (lookup-metavariable metas x)])
-                   (if (instantiated? val)
-                       (update-goal metas (todo val))
-                       g))]
-                [other other]))])
-
-    (proof (<- (proof-state metas (zipper focus ctxt)) get)
-           (match ctxt
-             [(cons (list-item-frame to-l to-r) _)
-              (proof (move up)
-                     (<- (proof-state _ (zipper neighbors _)) get)
-                     (set-focus
-                      (for/list ([goal neighbors])
-                        (update-goal metas goal)))
-                     (move (down/list-ref (length to-l))))]
-             [(? null?) (pure (void))]
-             [_ (proof-fail (make-exn:fail (format "No neighbors: ~a" ctxt) (current-continuation-marks)))]))))
-
 (define/proof solve
-  (<- (proof-state _ looking-at) get)
-  (match (zipper-focus looking-at)
+  (<- looking-at get-focus)
+  (match looking-at
     [(refined-step name goal rule children extractor)
      #:when (andmap complete-proof? children)
      (proof (let child-extracts (map complete-proof-extract children))
@@ -163,8 +141,7 @@
                                           ext
                                           children))
             (set-focus new-node)
-            (assign-meta name ext)
-            update-neighbors)]
+            (assign-meta name ext))]
     [(refined-step _ _ _ children _)
      (proof-fail (make-exn:fail:cant-solve
                   (format "Not all children are complete: ~a"
@@ -175,6 +152,17 @@
                                                    other-state)
                                            (current-continuation-marks)))]))
 
+(define/proof dependent
+  (<- (proof-state metas (zipper focus ctxt)) get)
+  (match focus
+    [(dependent-subgoal mv todo)
+     (let ([val (lookup-metavariable metas mv)])
+       (if (instantiated? val)
+           (put (proof-state metas (zipper (todo val) ctxt)))
+           (pure (void))))]
+    [_ (proof-fail (make-exn:fail
+                    "Not a dependent subgoal"
+                    (current-continuation-marks)))]))
 
 (struct exn:fail:cant-refine exn:fail:contract
   (looking-at)
@@ -191,7 +179,7 @@
               (pure goal)]
              [other
               (proof-fail (make-exn:fail:cant-refine
-                           "Can't refine"
+                           "Goal can't be refined"
                            (current-continuation-marks)
                            other))]))
   (<- (refinement new-goals extraction)
@@ -277,11 +265,10 @@
   (check-true (andmap subgoal? (refined-step-children proof-4)))
 
   (define proof-5
-    (let ([next-in-list (move right/list)])
+    (let ([next-in-list (move right/proof)])
       (test-a-proof
        (proof (refine (rule-plus 3))
-              (move down/refined-step-children)
-              (move down/list-first)
+              (move (down/proof))
               (refine (lit -23))
               solve
               next-in-list
@@ -290,7 +277,7 @@
               next-in-list
               (refine (lit 42))
               solve
-              (move up up)
+              (move up)
               solve))))
   (check-true (complete-proof? proof-5))
   (check-equal? (syntax->datum (complete-proof-extract proof-5))
@@ -303,7 +290,7 @@
   (define proof-7
     (test-a-proof
      (proof (refine with-hyp)
-            (move down/refined-step-children down/list-first)
+            (move (down/proof))
             (<- f get-focus)
             (refine int-type)
             solve))))
