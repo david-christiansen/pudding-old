@@ -298,5 +298,5 @@
                                         #t)
                             H)
                       B)]
-            [_ (>> H (=-in S S (Type i)))])
+            [_ (>> H (=-in A A (Type i)))])
            (lambda (#,(x-scope #'x 'add)) body)])))

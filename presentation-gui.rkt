@@ -377,10 +377,10 @@
     (require "proof-state.rkt")
     (require "proofs.rkt")
 
-    (provide ctt-anchor g)
+    (provide ctt-anchor g2)
 
     (define-namespace-anchor ctt-anchor)
-    (define g #'(--> Boolean (--> String (--> String String)))))
+    (define g2 #'(--> Boolean (--> String (--> String String)))))
 
   (require
    'stlc-prover-context)
@@ -392,4 +392,4 @@
    'ctt-prover-context)
 
   (parameterize ([current-namespace (namespace-anchor->namespace ctt-anchor)])
-    (prover-window (namespace-anchor->namespace ctt-anchor) (decorate-identifiers g))))
+    (prover-window (namespace-anchor->namespace ctt-anchor) (decorate-identifiers g2))))

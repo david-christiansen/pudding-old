@@ -70,6 +70,14 @@
                          (sequent->pict goal canvas))
                         3))
        (on-box p #:border-width bw)]
+      [(irrelevant-subgoal goal)
+       (define status (text "?" '(bold)))
+       (define p (inset (hb-append
+                         proof-hspace
+                         status
+                         (sequent->pict goal canvas))
+                        3))
+       (on-box p #:border-width bw)]
       [(refined-step name (>> H G) rule children extractor)
        (define status (text "➥" '(bold)))
        (define n (mv name))
