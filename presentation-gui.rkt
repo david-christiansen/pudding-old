@@ -653,8 +653,23 @@
     (define-namespace-anchor stlc-anchor)
     (define g #'(--> String (--> String Int))))
 
-  (require
-   'stlc-prover-context)
+  (module ctt-prover-context racket/base
+    (require "theories/ctt.rkt")
+    (require "tactics.rkt")
+    (require zippers)
+    (require "proof-state.rkt")
+    (require "proofs.rkt")
 
+    (provide ctt-anchor g)
+
+    (define-namespace-anchor ctt-anchor)
+    (define g #'(--> Boolean (--> String (--> String String)))))
+
+  (require
+   'ctt-prover-context)
+  #;
   (parameterize ([current-namespace (namespace-anchor->namespace stlc-anchor)])
-    (prover-window (namespace-anchor->namespace stlc-anchor) (decorate-identifiers g))))
+    (prover-window (namespace-anchor->namespace stlc-anchor) (decorate-identifiers g)))
+
+  (parameterize ([current-namespace (namespace-anchor->namespace ctt-anchor)])
+    (prover-window (namespace-anchor->namespace ctt-anchor) (decorate-identifiers g))))

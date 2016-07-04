@@ -91,7 +91,11 @@
 
 (define-for-syntax ((rule-clause msg lits dat-lits lit-sets) stx)
   (syntax-parse stx
-    [(lhs:sequent-stx (subgoals:subgoal ...) extract:expr)
+    [(lhs:sequent-stx
+      (~optional (~seq #:when side-condition:expr)
+                 #:defaults ([side-condition #'#t]))
+      (subgoals:subgoal ...)
+      extract:expr)
      (let ([names (attribute subgoals.name)]
            [hyps (attribute subgoals.hypotheses)]
            [concls (attribute subgoals.conclusion)]
@@ -125,6 +129,7 @@
                 #:datum-literals datum-literals
                 #:literal-sets literal-sets
                 [lhs.goal
+                 #:when side-condition
                  (proof
                   metavar-decls ...
                   (let goals (list new-goals ...))
