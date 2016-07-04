@@ -2,14 +2,13 @@
 
 (require racket/gui framework presentations pict)
 (require zippers)
-(require (prefix-in pp: pprint))
-(require syntax/parse
-         (only-in syntax/id-set immutable-bound-id-set immutable-free-id-set))
+(require syntax/parse)
 (require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt" "metavariables.rkt" "expand-bindings.rkt")
 (require macro-debugger/expand)
 (require macro-debugger/syntax-browser)
 (require macro-debugger/stepper)
-(require framework)
+
+(require "gui/presentation-types.rkt" "gui/proof-pict.rkt" "gui/sequent-pict.rkt" "gui/term-pict.rkt")
 
 ;; Binding stuff
 (define/contract (decorate-hyp h)
@@ -45,94 +44,10 @@
                    (map decorate-proof children)
                    (lambda args (decorate-identifiers (apply extractor args))))]))
 
-;; Highlights
-(define/contract (hl pict)
-  (-> pict? pict?)
-  (let ([w (pict-width pict)]
-        [h (pict-height pict)])
-    (frame (cc-superimpose
-            pict
-            (cellophane
-             (filled-rectangle w h
-                               #:draw-border? #f
-                               #:color "yellow")
-             0.2))
-           #:color "yellow")))
 
-;; Here id is an opaque notion of identification, really just needed
-;; for debugging, because make-presentation-type is generative.
-(define (bound-identifier/p id)
-  (make-presentation-type 'bound-identifier/p
-                          #:equiv? (lambda (x y)
-                                     (and (identifier? x)
-                                          (identifier? y)
-                                          (bound-identifier=? x y)))
-                          #:empty-set immutable-bound-id-set))
-(define free-identifier/p
-  (make-presentation-type 'free-identifier/p
-                          #:equiv? (lambda (x y)
-                                     (and (identifier? x)
-                                          (identifier? y)
-                                          (free-identifier=? x y)))
-                          #:empty-set immutable-free-id-set))
-(define unknown-identifier/p
-  (make-presentation-type 'unknown-identifier/p))
 
-(define proof-step/p (make-presentation-type 'proof-step/p))
 
-(define metavariable/p (make-presentation-type 'metavariable/p))
 
-(define binding/p
-  (let ([bindings (make-weak-hasheq)])
-    (lambda (id)
-      (if id
-          (hash-ref! bindings id (thunk (bound-identifier/p id)))
-          unknown-identifier/p))))
-
-(define expression/p
-  (make-presentation-type 'expression/p))
-
-(define/contract (hyp->pict h canvas prev)
-  (-> hypothesis?
-      (is-a?/c presentation-pict-canvas%)
-      (listof hypothesis?)
-      pict?)
-  (match h
-    [(hypothesis name assumption relevant?)
-     (define h-id (get-occurrence-id name))
-     (define name-pict
-       (send canvas make-presentation name (binding/p h-id)
-             (text (format "~a" (syntax-e name)))
-             hl))
-     (define assumption-pict
-       (term->pict assumption canvas (map hypothesis-name prev)))
-     (define (wrap p)
-       (if relevant?
-           p
-           (hb-append (text "[") p (text "]"))))
-     (wrap (hb-append name-pict (text " : ") assumption-pict))]))
-
-(define/contract (sequent->pict seq canvas)
-  (-> sequent? (is-a?/c presentation-pict-canvas%) pict?)
-  (match seq
-    [(>> H G)
-     (define H-pict
-       (if (null? H)
-           (cc-superimpose
-            (ghost (text "()"))
-            (filled-ellipse 3 3 #:color "black"))
-           (apply hb-append
-                  (add-between (reverse
-                                (let loop ([hyps H])
-                                  (if (null? hyps)
-                                      '()
-                                      (cons (hyp->pict (car hyps) canvas (cdr hyps))
-                                            '() #;(loop (cdr hyps))
-                                            ))))
-                               (text ", ")))))
-     (define G-pict
-       (term->pict G canvas (map hypothesis-name H)))
-     (hb-append H-pict (text " >> ") G-pict)]))
 
 (define/contract (sequent->big-pict seq canvas)
   (-> sequent? (is-a?/c presentation-pict-canvas%) pict?)
@@ -153,206 +68,8 @@
      (define line (filled-rectangle width 1 #:draw-border? #t))
      (vl-append 10 context-pict line goal-pict )]))
 
-(define (on-box pict #:color [color "white"] #:border-width [border-width #f])
-  (cc-superimpose (filled-rectangle (pict-width pict) (pict-height pict) #:color color #:border-width border-width)
-                  pict))
 
-(define (opaque pict)
-  (cc-superimpose (filled-rectangle (pict-width pict) (pict-height pict)
-                                    #:color "white"
-                                    #:draw-border? #f)
-                  pict))
 
-;;; Given a proof zipper, return a procedure that takes a pict
-;;; representing the focus and its indentation and returns a pict
-;;; representing the whole tree.
-
-(define proof-vspace 10)
-
-(define (indent-proof-pict p)
-  (define indent-space 20)
-  (inset p indent-space 0 0 0))
-
-(define (proof-context->pict->pict ctxt canvas)
-  (lambda (focus-pict)
-    (match ctxt
-      [(list)
-       focus-pict]
-      [(cons (list-item-frame to-left to-right) more)
-       (define before
-         (map (lambda (p) (proof->pict (decorate-proof p) canvas))
-              (reverse to-left)))
-       (define after
-         (map (lambda (p) (proof->pict (decorate-proof p) canvas))
-              to-right))
-       (define siblings
-         (apply vl-append proof-vspace
-                (append before (list focus-pict) after)))
-       ((proof-context->pict->pict more canvas)
-        siblings)]
-      [(cons prf-frame more)
-       (match-define (zipper wrapped new-ctxt)
-         (up (zipper focus-pict (cons prf-frame more))))
-       ((proof-context->pict->pict new-ctxt canvas)
-        (proof->pict wrapped canvas))])))
-
-(define/contract (proof->pict proof canvas #:focus? [focus? #f])
-  (->* (proof-step? (is-a?/c presentation-pict-canvas%))
-       (#:focus? boolean?)
-       pict?)
-  (define hspace 5)
-  (define by (text "by" '(bold)))
-  (define left (text "<=" '(bold)))
-  (define bw (if focus? 3 #f))
-  (define (mv n)
-    (send canvas make-presentation n metavariable/p
-          (opaque (text (format "~v" n)))
-          hl))
-  (define/contract (with-children step pict)
-    (-> proof-step?
-        pict?
-        pict?)
-    (match step
-      [(or (refined-step _ _ _ children _)
-           (complete-proof _ _ _ children))
-       (apply vl-append proof-vspace pict
-              (if (pict? children)
-                  (list (indent-proof-pict children))
-                  (for/list ([c children])
-                    (indent-proof-pict (proof->pict c canvas)))))]
-      [_ pict]))
-  (define/contract step-pict
-    pict?
-    (match proof
-      [(subgoal name goal)
-       (define status (text "?" '(bold)))
-       (define n (mv name))
-       (define p (inset (hb-append
-                         hspace
-                         status
-                         n
-                         left
-                         (sequent->pict goal canvas))
-                        3))
-       (on-box p #:border-width bw)]
-      [(refined-step name (>> H G) rule children extractor)
-       (define status (text "➥" '(bold)))
-       (define n (mv name))
-       (define p
-         (inset (hb-append hspace
-                           status
-                           n
-                           left
-                           (sequent->pict (>> H G) canvas)
-                           (if rule
-                               (hb-append hspace
-                                          by
-                                          (term->pict
-                                           (datum->syntax #f rule)
-                                           canvas
-                                           (map hypothesis-name H)))
-                               empty))
-                3))
-       (on-box p #:border-width bw)]
-      [(complete-proof (>> H G) rule extract children)
-       (define status (text "✔" '(bold)))
-       (on-box (inset (hb-append hspace
-                                 status
-                                 (term->pict extract canvas (map hypothesis-name H))
-                                 left
-                                 (sequent->pict (>> H G) canvas))
-                      3)
-               #:border-width bw)]
-      [(? pict? a-pict)
-       ;; This is a bit of a hack, but it lets this be easily used
-       ;; with the zipper-traversing code
-       a-pict]
-      [other (on-box (text (format "~v" other)))]))
-  (send canvas make-presentation proof proof-step/p
-        (with-children proof step-pict)
-        hl))
-
-(define (pprint-term stx canvas bindings)
-  (-> syntax?
-      (is-a?/c presentation-pict-canvas%)
-      (listof (cons/c symbol?
-                      (or/c (list/c 'bound symbol?)
-                            (list/c 'bound #f)
-                            (list/c 'free)
-                            (list/c 'binding))))
-      any/c)
-  (syntax-parse stx
-    #:literals (lambda)
-    [x:id
-     (define x-id (get-occurrence-id #'x))
-     (define p-type
-       (cond [x-id
-              (match (assoc x-id bindings)
-                [(list _ 'bound binder-id) (binding/p binder-id)]
-                [(list _ 'free) free-identifier/p]
-                [(list _ 'binding) (binding/p x-id)]
-                [#f free-identifier/p])]
-             [(list? (identifier-binding #'x))
-              free-identifier/p]
-             [else unknown-identifier/p]))
-     (pp:markup
-      (lambda (str)
-        (if (string? str)
-            (send canvas make-presentation #'x p-type
-                  (opaque (text str)) hl)
-            (send canvas make-presentation #'x p-type
-                  str hl)))
-      (pp:text (symbol->string (syntax->datum #'x))))]
-    [x #:when (metavariable? (syntax-e #'x))
-       (pp:markup
-        (lambda (str)
-          (send canvas make-presentation (syntax-e #'x) metavariable/p
-                (if (string? str) (opaque (text str)) str)
-                hl))
-        (pp:text (format "~v" (syntax-e #'x))))]
-    #;
-    [(lambda (xs:id ...) body)
-     (pp:h-append
-      pp:lparen
-      (pp:v-concat/s
-       (list (pp:group
-              (pp:hs-append (pprint-term #'lambda canvas)
-                            pp:lparen
-                            (apply pp:hs-append
-                                   (map (lambda (t) (pprint-term t canvas))
-                                        (syntax-e #'(xs ...))))
-                            pp:rparen))
-             (pprint-term #'body canvas)))
-      pp:rparen)]
-    [(tm ...)
-     (pp:markup
-      (lambda (p)
-        (send canvas make-presentation #'(tm ...) expression/p
-              p
-              hl))
-      (pp:h-append pp:lparen
-                   (pp:v-concat/s (map (lambda (t) (pprint-term t canvas bindings))
-                                       (syntax-e #'(tm ...))))
-                   pp:rparen))]
-    [other
-     (pp:text (format "~v" (syntax->datum #'other)))]))
-
-(define/contract (term->pict stx canvas bound-identifiers)
-  (-> syntax? (is-a?/c presentation-pict-canvas%) (listof identifier?) pict?)
-  (define (string->pict x)
-    (if (string? x)
-        (let ([lines (string-split x "\n" #:trim? #f)])
-          (for/fold ([pict (blank)]) ([l lines])
-            (vl-append pict (opaque (text l)))))
-        x))
-  (set! stx (decorate-identifiers stx))
-  ;; TODO put expand in the right namespace
-  (define bindings (find-bindings (expand stx) bound-identifiers))
-  (pp:pretty-markup
-   (pprint-term stx canvas bindings)
-   (lambda (x y)
-     (hb-append (string->pict x) (string->pict y)))
-   70))
 
 (define/contract (extract-pict focus canvas)
   (-> proof-step? (is-a?/c presentation-pict-canvas%) pict?)
@@ -666,10 +383,13 @@
     (define g #'(--> Boolean (--> String (--> String String)))))
 
   (require
-   'ctt-prover-context)
-  #;
+   'stlc-prover-context)
   (parameterize ([current-namespace (namespace-anchor->namespace stlc-anchor)])
     (prover-window (namespace-anchor->namespace stlc-anchor) (decorate-identifiers g)))
+
+
+  (require
+   'ctt-prover-context)
 
   (parameterize ([current-namespace (namespace-anchor->namespace ctt-anchor)])
     (prover-window (namespace-anchor->namespace ctt-anchor) (decorate-identifiers g))))
