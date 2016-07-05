@@ -31,7 +31,7 @@
                    (decorate-identifiers id))
                (decorate-identifiers new))])))
   (define bindings
-    (find-bindings (expand decorated) context))
+    (find-bindings (expand decorated) decorated-context))
   (define (find i)
     (let loop ([todo decorated-to-subst])
       (cond [(null? todo)
@@ -290,3 +290,13 @@
             [_ (>> H (=-in A A (Type i)))])
            (lambda (#,(x-scope #'x 'add)) body)])))
 
+
+(define-rule apply-reduce
+  #:literals (lambda =-in)
+  [(>> H (=-in ((lambda (x) body) arg) res T))
+   ([_ (>> H (=-in #,(subst (cons #'x (map hypothesis-name H))
+                            (list (list #'x #'arg))
+                            #'body)
+                   res
+                   T))])
+   (void)])
