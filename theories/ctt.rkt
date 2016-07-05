@@ -75,6 +75,10 @@
       val
       hs)]))
 
+(define-syntax-class level
+  #:attributes (level)
+  (pattern lvl:nat
+           #:attr level (syntax->datum #'lvl)))
 
 ;; Base types for the universe
 (struct Absurd () #:transparent)
@@ -96,13 +100,6 @@
 ;; For the predicative hierarchy
 (struct Type (level) #:transparent)
 
-(define-match-expander level
-  (syntax-parser
-    [(_ i)
-     #'(? syntax?
-         (app syntax-e
-              (? exact-nonnegative-integer? i)))]))
-
 ;; Rules for the universe
 (define (type-formation i)
   (rule #:literals (Type)
@@ -115,24 +112,16 @@
 
 (define type-equality
   (rule #:literals (Type =-in)
-        [(>> H (=-in (Type j1) (Type j2) (Type k)))
-         #:when (let ([j1-lvl (syntax-e #'j1)]
-                      [j2-lvl (syntax-e #'j2)]
-                      [k-lvl (syntax-e #'k)])
-                  (and (exact-nonnegative-integer? j1-lvl)
-                       (exact-nonnegative-integer? j2-lvl)
-                       (exact-nonnegative-integer? k-lvl)
-                       (= j1-lvl j2-lvl)
-                       (< j1-lvl k-lvl)))
+        [(>> H (=-in (Type j1:level) (Type j2:level) (Type k:level)))
+         #:when (and (= (attribute j1.level) (attribute j2.level))
+                     (< (attribute j1.level) (attribute k.level)))
          ()
          (void)]))
 
 (define (cumulativity j)
   (rule #:literals (Type in)
-        [(>> H (in T (Type k)))
-         #:when (let ([k-lvl (syntax-e #'k)])
-                  (and (exact-nonnegative-integer? k-lvl)
-                       (< j k-lvl)))
+        [(>> H (in T (Type k:level)))
+         #:when (< j (attribute k.level))
          ([_ (>> H (in T (Type #,j)))])
          (void)]))
 
@@ -140,13 +129,13 @@
 ;; Rules for absurdity
 (define-rule absurd-formation
   #:literals (Type)
-  [(>> H (Type i))
+  [(>> H (Type i:level))
    ()
    (Absurd)])
 
 (define-rule absurd-equality
   #:literals (=-in Absurd Type)
-  [(>> H (=-in (Absurd) (Absurd) (Type i)))
+  [(>> H (=-in (Absurd) (Absurd) (Type i:level)))
    #:when (exact-nonnegative-integer? (syntax-e #'i))
    ()
    (void)])
@@ -180,13 +169,13 @@
 ;; Rules for the unit type (here called Void)
 (define void-formation
   (rule #:literals (Type)
-        [(>> H (Type i))
+        [(>> H (Type i:level))
          ()
          (Void)]))
 
 (define-rule void-equality
   #:literals (=-in Void Type)
-  [(>> H (=-in (Void) (Void) (Type i)))
+  [(>> H (=-in (Void) (Void) (Type i:level)))
    #:when (exact-nonnegative-integer? (syntax-e #'i))
    ()
    (void)])
@@ -220,13 +209,13 @@
 ;; Rules for Booleans
 (define boolean-formation
   (rule #:literals (Type)
-        [(>> H (Type i))
+        [(>> H (Type i:level))
          ()
          (Boolean)]))
 
 (define-rule boolean-equality
   #:literals (=-in Boolean Type)
-  [(>> H (=-in (Boolean) (Boolean) (Type i)))
+  [(>> H (=-in (Boolean) (Boolean) (Type i:level)))
    #:when (exact-nonnegative-integer? (syntax-e #'i))
    ()
    (void)])
@@ -243,15 +232,15 @@
    ()
    #f])
 
-(define (parse-Boolean stx)
-  (match (syntax-e stx)
-    [(? identifier? id)
-     (free-identifier=? id #'Boolean)]
+(define (stx-boolean? stx)
+  (syntax-parse stx
+    #:literals (Boolean)
+    [(Boolean) #t]
     [_ #f]))
 
 (define (boolean-elim i)
   (rule #:literals (Void)
-        [(>> (at-hyp i H1 (hypothesis x (? parse-Boolean) r?) H2)
+        [(>> (at-hyp i H1 (and h (hypothesis x (? stx-boolean?) r?)) H2)
              G)
          ;; TODO subst in H2, G
          ([t (>> (instantiate-hyps H2 x #'#t H1)
@@ -276,14 +265,14 @@
 ;; Rules for non-dependent functions
 (define-rule function-formation
   #:literals (Type)
-  [(>> H (Type i))
+  [(>> H (Type i:level))
    ([A (>> H (Type i))]
     [B (>> H (Type i))])
    (--> A B)])
 
 (define-rule function-equality
   #:literals (Type --> =-in)
-  [(>> H (=-in (--> A B) (--> C D) (Type i)))
+  [(>> H (=-in (--> A B) (--> C D) (Type i:level)))
    ([_ (>> H (=-in A C (Type i)))]
     [_ (>> H (=-in B D (Type i)))])
    (void)])
@@ -300,3 +289,4 @@
                       B)]
             [_ (>> H (=-in A A (Type i)))])
            (lambda (#,(x-scope #'x 'add)) body)])))
+
