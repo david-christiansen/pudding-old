@@ -86,8 +86,10 @@
            (raise-syntax-error
             'rule "Internal error: No metavariable" orig-stx)))]
     [else
-     (quasisyntax/loc orig-stx
-       (irrelevant-subgoal (>> #,hyps (syntax #,concl))))]))
+     (with-syntax ([hyps hyps]
+                   [concl concl])
+       (syntax/loc orig-stx
+         (irrelevant-subgoal (>> hyps (quasisyntax concl)))))]))
 
 (define-for-syntax ((rule-clause msg lits dat-lits lit-sets) stx)
 
