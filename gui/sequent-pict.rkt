@@ -43,7 +43,7 @@
                                   (if (null? hyps)
                                       '()
                                       (cons (hyp->pict (car hyps) canvas (cdr hyps))
-                                            '() #;(loop (cdr hyps))
+                                            (loop (cdr hyps))
                                             ))))
                                (text ", ")))))
      (define G-pict
