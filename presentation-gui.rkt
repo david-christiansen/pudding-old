@@ -380,16 +380,19 @@
     (provide ctt-anchor g2)
 
     (define-namespace-anchor ctt-anchor)
-    (define g2 #'(--> Boolean (--> String (--> String String)))))
+    (define g2 #'(=-in ((lambda (y) y) (Type 0)) (Type 0) (Type 1)))
+    #;
+    (define g2 #'(--> (Boolean) (--> (String) (--> (String) (String))))))
 
   (require
    'stlc-prover-context)
+  
   (parameterize ([current-namespace (namespace-anchor->namespace stlc-anchor)])
     (prover-window (namespace-anchor->namespace stlc-anchor) (decorate-identifiers g)))
 
 
   (require
    'ctt-prover-context)
-
+#;
   (parameterize ([current-namespace (namespace-anchor->namespace ctt-anchor)])
     (prover-window (namespace-anchor->namespace ctt-anchor) (decorate-identifiers g2))))

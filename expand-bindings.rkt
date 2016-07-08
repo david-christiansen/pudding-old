@@ -2,7 +2,7 @@
 
 (require syntax/parse)
 
-(provide decorate-identifiers find-bindings get-occurrence-id)
+(provide decorate-identifiers find-bindings get-occurrence-id bindings/c binding/c)
 
 (define my-id-prop 'binder-finder-identifer)
 
@@ -58,6 +58,16 @@
   (and mem
        (syntax-property (car mem) my-id-prop)))
 
+(define binding/c
+  (cons/c exact-nonnegative-integer?
+          (or/c (list/c 'bound exact-nonnegative-integer?)
+                (list/c 'bound #f)
+                (list/c 'free)
+                (list/c 'binding))))
+
+(define bindings/c
+  (listof binding/c))
+
 ;;; Return a mapping from internal identifier IDs to either `(bound
 ;;; ,ID) if it is bound by ID, `(bound #f) if it is bound by something
 ;;; not in the source, or `(free) if it is not bound in the expansion,
@@ -67,11 +77,7 @@
 (define/contract (find-bindings stx [bindings '()])
   (->* (syntax?)
        ((listof identifier?))
-       (listof (cons/c exact-nonnegative-integer?
-                       (or/c (list/c 'bound exact-nonnegative-integer?)
-                             (list/c 'bound #f)
-                             (list/c 'free)
-                             (list/c 'binding)))))
+       bindings/c)
   (define (under-bindings formals body)
     (let* ([bs (if (identifier? formals)
                    (list formals)
@@ -86,6 +92,15 @@
                `(,(cdr x) binding))
              (for/list ([b body])
                (find-bindings b (append (reverse bs) bindings))))))
+  (define/contract (identifier-binder id bindings)
+    (-> identifier?
+        (listof identifier?)
+        bindings/c)
+    (if-let (my-id (syntax-property id my-id-prop))
+            (if-let (b (find-id id bindings))
+                    (list `(,my-id bound ,b))
+                    (list `(,my-id free)))
+            '()))
   (syntax-parse stx
     #:literal-sets (kernel-literals)
     ;; top-level forms
@@ -158,23 +173,15 @@
             (for/list ([e (syntax->list #'(expr ...))])
               (find-bindings e bindings)))]
     [(#%top . id)
-     (if-let (my-id (syntax-property #'id my-id-prop))
-             (list `(,my-id free))
-             '())]
+     (identifier-binder #'id bindings)]
     [(#%variable-reference id)
      (find-bindings #'id bindings)]
     [(#%variable-reference (#%top . id))
-     (if-let (my-id (syntax-property #'id my-id-prop))
-             (list `(,my-id free))
-             '())]
+     (identifier-binder #'id bindings)]
     [(#%variable-reference) '()]
     [other
      #:when (identifier? #'other)
-     (if-let (my-id (syntax-property #'other my-id-prop))
-             (if-let (b (find-id #'other bindings))
-                     (list `(,my-id bound ,b))
-                     (list `(,my-id free)))
-             '())]
+     (identifier-binder #'other bindings)]
     [other #;(error "unknown case" #'other)
            '()]))
 

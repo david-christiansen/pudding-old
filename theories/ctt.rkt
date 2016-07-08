@@ -3,6 +3,7 @@
 (require syntax/parse)
 (require (for-syntax syntax/parse))
 (require "../define-rule.rkt" "../infrastructure.rkt" "../error-handling.rkt" "../proof-state.rkt")
+(require "../proofs.rkt")
 (require (for-template racket/base))
 
 (require "../expand-bindings.rkt")
@@ -10,42 +11,29 @@
 (provide (all-defined-out) ;;TODO
          )
 
+(require macro-debugger/stepper macro-debugger/syntax-browser)
+
 ;; Experimental generic substitution
 
-(define/contract (subst context to-subst term)
-  (-> (listof identifier?)
+(define/contract (subst bindings to-subst term)
+  (-> bindings/c
       (listof (list/c identifier? syntax?))
       syntax?
       syntax?)
-  (define decorated
-    (decorate-identifiers term))
-  (define decorated-context
-    (map decorate-identifiers context))
-  (define decorated-to-subst
-    (for/list ([todo to-subst])
-      (match todo
-        [(list id new)
-         (define found (member id decorated-context))
-         (list (if found
-                   (car found)
-                   (decorate-identifiers id))
-               (decorate-identifiers new))])))
-  (define bindings
-    (find-bindings (expand decorated) decorated-context))
   (define (find i)
-    (let loop ([todo decorated-to-subst])
-      (cond [(null? todo)
-             #f]
-            [(let ([id (get-occurrence-id (caar todo))])
-               (and id (= id i)))
-             (cdar todo)]
-            [else (loop (cdr todo))])))
+    (let loop ([todo to-subst])
+      (match todo
+        [(list) #f]
+        [(cons (list (app get-occurrence-id id) val) more)
+         #:when (and id (= id i))
+         val]
+        [(cons _ more) (loop more)])))
   (define (helper stx)
     (syntax-parse stx
       [x:id
        (define x-id (get-occurrence-id #'x))
        (match (assv x-id bindings)
-         [`(bound ,(? exact-nonnegative-integer? i))
+         [`(,_ bound ,(? exact-nonnegative-integer? i))
           (define res (find i))
           (if res res #'x)]
          [_
@@ -55,6 +43,15 @@
       ;; todo: cases for "exotic" structures in syntax
       [_ stx]))
   (helper term))
+
+(define/contract (beta-reduction term)
+  (-> syntax? syntax?)
+  (define decorated (decorate-identifiers term))
+  (define bindings (find-bindings (expand decorated)))
+  (syntax-parse decorated
+    [((lambda (x) body) arg)
+     (subst bindings (list (list #'x #'arg)) #'body)]
+    [_ (raise-argument-error 'beta-reduction "Beta-redex" term)]))
 
 (define (instantiate-hyp before name val hyp)
   (match hyp
@@ -294,9 +291,17 @@
 (define-rule apply-reduce
   #:literals (lambda =-in)
   [(>> H (=-in ((lambda (x) body) arg) res T))
-   ([_ (>> H (=-in #,(subst (cons #'x (map hypothesis-name H))
-                            (list (list #'x #'arg))
-                            #'body)
+   ([_ (>> H (=-in #,(beta-reduction #'((lambda (x) body) arg))
                    res
                    T))])
    (void)])
+
+
+(define dependent-function-formation
+  (rule #:literals (Type)
+        [(>> H (Type i:level))
+         ([A (>> H (Type i))]
+          [B (A) (>> H (--> A (Type i)))])
+         (Pi A B)]))
+
+
