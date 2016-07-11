@@ -1,8 +1,33 @@
-Refiners in Racket
-======================
+Pudding
+=========
 
-[![Build Status](https://travis-ci.org/david-christiansen/racket-refiners.svg?branch=master)](https://travis-ci.org/david-christiansen/racket-refiners)
-[![Coverage Status](https://coveralls.io/repos/github/david-christiansen/racket-refiners/badge.svg?branch=master)](https://coveralls.io/github/david-christiansen/racket-refiners?branch=master)
+[![Build Status](https://travis-ci.org/david-christiansen/pudding.svg?branch=master)](https://travis-ci.org/david-christiansen/racket-refiners)
+[![Coverage Status](https://coveralls.io/repos/github/david-christiansen/pudding/badge.svg?branch=master)](https://coveralls.io/github/david-christiansen/racket-refiners?branch=master)
 
-This is a framework for writing vaguely-Nuprlish refiners in Racket,
-using syntax objects to represent terms.
+Pudding is a proof assistant under development at Indiana University, deeply integrated with the Racket programming language.
+
+
+Installation Instructions
+-------------------------
+
+Most of Pudding's dependencies are available on the Racket package server. There is one significant exception, which is a library of GUI components which has not yet had an official release.
+
+First, clone [the GUI components repository](https://github.com/david-christiansen/racket-presentation-gui). In the checked-out directory, run:
+
+```
+.../racket-presentation-gui$ raco pkg install -n presentations
+```
+
+Once that's done, check out this repository. To test the GUI, run:
+
+```
+.../pudding$ racket presentation-gui.rkt
+```
+
+To test code generation, run the files in the `demo/` subdirectory.
+
+
+Web Site
+--------
+
+The official Pudding Web site is at [http://pudding-prover.org](http://pudding-prover.org).
