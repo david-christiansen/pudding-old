@@ -86,12 +86,20 @@
            (raise-syntax-error
             'rule "Internal error: No metavariable" orig-stx)))]
     [else
-     (quasisyntax/loc orig-stx
-       (irrelevant-subgoal (>> #,hyps (syntax #,concl))))]))
+     (with-syntax ([hyps hyps]
+                   [concl concl])
+       (syntax/loc orig-stx
+         (irrelevant-subgoal (>> hyps (quasisyntax concl)))))]))
 
 (define-for-syntax ((rule-clause msg lits dat-lits lit-sets) stx)
+
   (syntax-parse stx
-    [(lhs:sequent-stx (subgoals:subgoal ...) extract:expr)
+    [(lhs:sequent-stx
+      (~and (~seq sequent-opt ...)
+            (~seq (~or (~seq #:when side-condition:expr)
+                       (~seq #:declare decl-id:id decl-class:expr)) ...))
+      (subgoals:subgoal ...)
+      extract:expr)
      (let ([names (attribute subgoals.name)]
            [hyps (attribute subgoals.hypotheses)]
            [concls (attribute subgoals.conclusion)]
@@ -125,6 +133,7 @@
                 #:datum-literals datum-literals
                 #:literal-sets literal-sets
                 [lhs.goal
+                 sequent-opt ...
                  (proof
                   metavar-decls ...
                   (let goals (list new-goals ...))
