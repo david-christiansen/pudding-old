@@ -7,7 +7,8 @@
                     [proof-modify modify])
          "metavariables.rkt"
          "proofs.rkt"
-         "infrastructure.rkt")
+         "infrastructure.rkt"
+         "contexts.rkt")
 
 (provide init-proof-state
          new-meta
@@ -22,10 +23,13 @@
          move
          movement-possible?
          refine
+         (struct-out refinement-rule)
+         (struct-out rule-parameter)
          movement-possible?
          solve
          dependent
-         (struct-out exn:fail:cant-refine))
+         (struct-out exn:fail:cant-refine)
+         rule/c)
 
 (module+ test
  (require rackunit))
@@ -169,6 +173,78 @@
   #:extra-constructor-name make-exn:fail:cant-refine
   #:transparent)
 
+
+;; Refinement rules
+
+(struct not-provided () #:transparent)
+(define (provided? x) (not (not-provided? x)))
+
+(define (sort->contract s)
+  (or/c not-provided?
+        (match s
+          ['hypothesis exact-nonnegative-integer?]
+          ['name symbol?]
+          ['level (or/c (syntax/c exact-nonnegative-integer?) identifier?)]
+          ['term syntax?]
+          ['context context?]
+          ['count exact-nonnegative-integer?]
+          [_ (raise-argument-error 'sort->contract "valid sort" s)])))
+
+;; A parameter position for a rule. The name is a symbol representing
+;; the name of the formal parameter, and the sort is a valid sort.
+(struct rule-parameter (name sort) #:transparent)
+
+
+;; A refinement rule is an operator that, when applied to a goal,
+;; returns a refinement in the proof monad. Refinement rules can take
+;; parameters, which are specified in the arguments field as a list of
+;; two-element lists of symbols.
+(struct refinement-rule (name parameters procedure)
+  #:transparent
+  #:property prop:procedure
+  (lambda (r . args)
+    (rule-application r args)))
+
+
+(struct rule-application (rule arguments) #:transparent)
+(define rule/c
+  (and/c refinement-rule?
+         (lambda (x)
+           (procedure-arity-includes?
+            (refinement-rule-procedure x)
+            (length (refinement-rule-parameters x))))))
+
+(define/contract (apply-rule rule goal)
+  (-> rule-application? sequent? (proof/c refinement?))
+  (match-define (rule-application (refinement-rule name params proc) args) rule)
+  ;; Ensure that all argument positions are filled out
+  (unless (= (length params) (length args))
+    (proof-fail (make-exn:fail:contract
+                 (format "Wrong number of arguments to refinement rule. Expected ~a, got ~a."
+                         params
+                         args)
+                 (current-continuation-marks))))
+  ;; Check that all argument positions are provided
+  (unless (andmap provided? args)
+    (proof-fail (make-exn:fail:contract
+                 (format "Some arguments were not provided in ~a" args)
+                 (current-continuation-marks))))
+  ;; Check that all argument positions meet the contract
+  (define rule-contract
+    (dynamic->* #:mandatory-domain-contracts
+                (for/list ([spec params]
+                           [arg args])
+                  (match-define (rule-parameter name sort) spec)
+                  (flat-named-contract sort (sort->contract sort)))
+                #:range-contracts
+                (list (-> sequent? (proof/c refinement?)))))
+  ;; Finally apply the rule
+  (with-handlers ([exn? proof-fail])
+    ((apply (contract rule-contract proc name 'proof)
+            args)
+     goal)))
+
+
 (define/proof (refine rule)
   (<- (proof-state ctxt looking-at) get)
   (let focus (zipper-focus looking-at))
@@ -183,7 +259,7 @@
                            (current-continuation-marks)
                            other))]))
   (<- (refinement new-goals extraction)
-      (rule goal))
+      (apply-rule rule goal))
   (<- name (pure (if (subgoal? focus)
                      (subgoal-name focus)
                      #f)))
@@ -195,7 +271,8 @@
 
 (module+ test
   (define goal (>> empty #'Int))
-  (define (rule-plus n)
+
+  (define (rule-plus-impl n)
     (match-lambda
       [(>> hyps todo)
        #:when (free-identifier=? todo #'Int)
@@ -208,19 +285,29 @@
         (pure (refinement subgoals
                           (lambda args
                             (datum->syntax #'here (cons #'+ args))))))]))
-  (define (lit n)
+  (define rule-plus
+    (refinement-rule 'rule-plus (list (rule-parameter 'how-many 'count)) rule-plus-impl))
+
+  (define (lit-impl n)
     (match-lambda
       [(>> hyps todo)
-       #:when (free-identifier=? todo #'Int)
-       (proof (pure (refinement empty (thunk (datum->syntax #'here n)))))]))
+       #:when (and (free-identifier=? todo #'Int)
+                   (integer? (syntax-e n)))
+       (proof (pure (refinement empty (thunk n))))]))
 
-  (define int-type
+  (define lit
+    (refinement-rule 'lit (list (rule-parameter 'literal 'term)) lit-impl))
+
+  (define (int-type-impl)
     (match-lambda
       [(>> hyps todo)
        #:when (free-identifier=? todo #'Type)
        (proof (pure (refinement empty (thunk #'Int))))]))
 
-  (define with-hyp
+  (define int-type
+    (refinement-rule 'int-type (list) int-type-impl))
+
+  (define (with-hyp-impl)
     (match-lambda
       [(>> hyps todo)
        (proof (<- t1 (new-meta 't1))
@@ -234,6 +321,9 @@
                             subgoals
                             (thunk #'int)))))]))
 
+  (define with-hyp
+    (refinement-rule 'with-hyp (list) with-hyp-impl))
+
   (define (test-a-proof prf)
     (rebuild
      (proof-state-proof
@@ -246,11 +336,11 @@
   (check-false (complete-proof? proof-1))
   (check-true (subgoal? proof-1))
 
-  (define proof-2 (test-a-proof (refine (lit 1))))
+  (define proof-2 (test-a-proof (refine (lit #'1))))
   (check-true (refined-step? proof-2))
   (check-equal? (refined-step-children proof-2) '())
 
-  (define proof-3 (test-a-proof (proof (refine (lit 1))
+  (define proof-3 (test-a-proof (proof (refine (lit #'1))
                                        solve)))
   (check-true (complete-proof? proof-3))
   (check-equal? (syntax->datum (complete-proof-extract proof-3))
@@ -269,13 +359,13 @@
       (test-a-proof
        (proof (refine (rule-plus 3))
               (move (down/proof))
-              (refine (lit -23))
+              (refine (lit #'-23))
               solve
               next-in-list
-              (refine (lit 17))
+              (refine (lit #'17))
               solve
               next-in-list
-              (refine (lit 42))
+              (refine (lit #'42))
               solve
               (move up)
               solve))))
@@ -285,14 +375,14 @@
 
   (define proof-6
     (test-a-proof
-     (proof (refine with-hyp))))
+     (proof (refine (with-hyp)))))
 
   (define proof-7
     (test-a-proof
-     (proof (refine with-hyp)
+     (proof (refine (with-hyp))
             (move (down/proof))
             (<- f get-focus)
-            (refine int-type)
+            (refine (int-type))
             solve))))
 
 ;; Attempt to prove a goal completely. Return the tree, or throw an

@@ -8,8 +8,7 @@
          (struct-out refinement)
          new-goal
          done-refining
-         >>
-         rule/c)
+         >>)
 
 (module+ test
   (require rackunit))
@@ -62,7 +61,7 @@
 (define/proof (done-refining term)
   (pure (refinement empty (lambda _ term))))
 
-(define rule/c (-> sequent? (proof/c refinement?)))
+
 
 
 

@@ -21,7 +21,7 @@
 
 
 (define/refiner identity #`(has-type #,(add-type-scopes #'(∀ α (→ α α))))
-  (refine Forall-intro)
+  (refine (Forall-intro))
   (move (down/proof))
   (refine (function-intro 'x))
   (move (down/proof))

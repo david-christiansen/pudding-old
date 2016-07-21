@@ -1,6 +1,6 @@
 #lang racket
 
-(require (for-syntax racket/syntax syntax/parse)
+(require (for-syntax racket/syntax syntax/parse racket/match racket/string)
          syntax/parse
          zippers
          "infrastructure.rkt"
@@ -92,7 +92,6 @@
          (irrelevant-subgoal (>> hyps (quasisyntax concl)))))]))
 
 (define-for-syntax ((rule-clause msg lits dat-lits lit-sets) stx)
-
   (syntax-parse stx
     [(lhs:sequent-stx
       (~and (~seq sequent-opt ...)
@@ -141,7 +140,8 @@
                                     (lambda (extract-binding ...)
                                       (with-syntax (extract-stx-binding ...)
                                         (quasisyntax extract))))))]
-                [_  (proof-fail (make-exn:fail failure-message (current-continuation-marks)))])])))]))
+                [_  (proof-fail (make-exn:fail failure-message
+                                               (current-continuation-marks)))])])))]))
 
 
 (define-syntax (rule stx)
@@ -160,7 +160,9 @@
                         #:name "failure message")
              (~optional (~seq #:scopes (scopes:id ...))
                         #:defaults ([(scopes 1) null])
-                        #:name "scope names"))
+                        #:name "scope names")
+             (~optional (~seq #:pre precondition:expr)
+                        #:defaults ([precondition #'#t])))
         ...
         alt
         ...)
@@ -177,20 +179,46 @@
                          (syntax->list #'(scopes ...)))])
        #`(lambda (st)
            (let (scope-bindings ...)
-             (match st
-               alternatives ...
-               [other (proof-fail (make-exn:fail:cant-refine failure-message
-                                                             (current-continuation-marks)
-                                                             other))]))))]))
+             (if precondition
+                 (match st
+                   alternatives ...
+                   [other (proof-fail (make-exn:fail:cant-refine
+                                       failure-message
+                                       (current-continuation-marks)
+                                       other))])
+                 (proof-fail (make-exn:fail
+                                   (format "Precondition ~a not met." 'precondition)
+                                   (current-continuation-marks)))))))]))
+
+(begin-for-syntax
+
+  (define-syntax-class rule-argument-sort
+    #:datum-literals (hypothesis name level term context count)
+    #:attributes (sort-name)
+    (pattern hypothesis #:with sort-name 'hypothesis)
+    (pattern name       #:with sort-name 'name)
+    (pattern level      #:with sort-name 'level)
+    (pattern term       #:with sort-name 'term)
+    (pattern context    #:with sort-name 'context)
+    (pattern count      #:with sort-name 'count))
+
+  (define-syntax-class rule-argument
+    #:attributes (name sort)
+    #:description "rule argument (name sort)"
+    (pattern (name a-sort:rule-argument-sort)
+             #:with sort (attribute a-sort.sort-name))))
 
 (define-syntax (define-rule stx)
   (syntax-parse stx
     [(_ n:id defn ...)
      #'(define n
-         (rule defn ...))]
-    [(_ (n:id args ...) defn ...)
-     #'(define (n args ...)
-         (rule defn ...))]))
+         (refinement-rule 'n (list) (thunk (rule defn ...))))]
+    [(_ (n:id arg:rule-argument ...) defn ...)
+     #'(define n
+         (refinement-rule 'n
+                          (list (rule-parameter 'arg.name 'arg.sort) ...)
+                          (lambda (arg.name ...)
+                            (rule defn ...))))]))
 
 (module+ test
   ;;; This macro relies on with-syntax bound syntax pattern variables
@@ -248,7 +276,7 @@
       [other
        #'other]))
 
-  (define-rule (Σ-formation x)
+  (define-rule (Σ-formation [x name])
     #:literals (Σ)
     #:scopes (new-scope)
     [(>> H Type)
@@ -295,13 +323,13 @@
      (void)])
 
   (define prf-1
-    (proof-eval (proof (refine Σ-intro)
+    (proof-eval (proof (refine (Σ-intro))
                        (move (down/proof))
-                       (refine Bool-intro-1)
+                       (refine (Bool-intro-1))
                        solve
                        (move right/proof)
                        dependent
-                       (refine So-intro)
+                       (refine (So-intro))
                        solve
                        (move up)
                        solve
@@ -329,11 +357,11 @@
     (complete-proof-extract
      (proof-eval (proof (refine (Σ-formation 't))
                         (move (down/proof))
-                        (refine Bool-formation)
+                        (refine (Bool-formation))
                         solve
                         (move right/proof)
                         dependent
-                        (refine Bool-formation)
+                        (refine (Bool-formation))
                         solve
                         (move up)
                         solve
@@ -342,19 +370,19 @@
 
   (define pair-of-bools
     (complete-proof-extract
-     (proof-eval (proof (refine Σ-intro)
+     (proof-eval (proof (refine (Σ-intro))
                         (move (down/proof))
-                        (refine Bool-intro-1)
+                        (refine (Bool-intro-1))
                         solve
                         (move right/proof)
                         dependent
-                        (refine Bool-intro-2)
+                        (refine (Bool-intro-2))
                         solve
                         (move up)
                         solve
                         get-focus)
                  (init-proof-state (>> null Bool-pair-type)))))
-  #;
+
   (check-equal? (syntax->datum pair-of-bools)
                 '(cons #t #f)))
 

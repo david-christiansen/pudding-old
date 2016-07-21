@@ -6,6 +6,10 @@ Pudding
 
 Pudding is a proof assistant under development at Indiana University, deeply integrated with the Racket programming language.
 
+Status
+------
+
+Pudding is currently incomplete, and cannot yet be used to prove anything.
 
 Installation Instructions
 -------------------------

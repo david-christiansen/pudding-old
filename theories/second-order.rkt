@@ -182,79 +182,98 @@
     [(_ _)
      #f]))
 
-(define/contract (assumption num)
-  (-> natural-number/c rule/c)
-  (match-lambda
-    [(>> hypotheses goal)
-     (if (< num (length hypotheses))
-         (match-let ([(hypothesis id hyp _) (list-ref hypotheses num)])
-           (if (assumption-proves? hyp goal)
-               (done-refining id)
-               (refinement-fail
-                'assumption
-                (>> hypotheses goal)
-                (format "Invalid hypothesis: expected ~a, got ~a"
-                        (syntax->datum goal)
-                        (syntax->datum hyp)))))
-         (refinement-fail
-          'assumption
-          (>> hypotheses goal)
-          "Hypothesis out of bounds"))]
-    [other (refinement-fail 'assumption
-                            other
-                            "not a well-formed goal")]))
+(define assumption
+  (refinement-rule
+   'assumption
+   (list (rule-parameter 'num 'hypothesis))
+   (lambda (num)
+     (match-lambda
+       [(>> hypotheses goal)
+        (if (< num (length hypotheses))
+            (match-let ([(hypothesis id hyp _) (list-ref hypotheses num)])
+              (if (assumption-proves? hyp goal)
+                  (done-refining id)
+                  (refinement-fail
+                   'assumption
+                   (>> hypotheses goal)
+                   (format "Invalid hypothesis: expected ~a, got ~a"
+                           (syntax->datum goal)
+                           (syntax->datum hyp)))))
+            (refinement-fail
+             'assumption
+             (>> hypotheses goal)
+             "Hypothesis out of bounds"))]
+       [other (refinement-fail 'assumption
+                               other
+                               "not a well-formed goal")]))))
 
 
 
 ;;; Rules for building types
 (define/contract Int-f rule/c
-  (match-lambda
-    [(>> _ (judgment is-type))
-     (done-refining #'Int)]
-    [other (refinement-fail 'Int-f
-                            other
-                            "wrong goal")]))
+  (refinement-rule
+   'Int-f
+   (list)
+   (thunk
+    (match-lambda
+      [(>> _ (judgment is-type))
+       (done-refining #'Int)]
+      [other (refinement-fail 'Int-f
+                              other
+                              "wrong goal")]))))
 
 (define/contract String-f rule/c
-  (match-lambda
-    [(>> _ (judgment is-type))
-     (done-refining #'String)]
-    [other (refinement-fail 'String-f
-                            other
-                            "wrong goal")]))
+  (refinement-rule
+   'String-f
+   (list)
+   (thunk
+    (match-lambda
+      [(>> _ (judgment is-type))
+       (done-refining #'String)]
+      [other (refinement-fail 'String-f
+                              other
+                              "wrong goal")]))))
 
 (define/contract Fun-f rule/c
-  (match-lambda
-    [(>> hyps (judgment is-type))
-     (proof
-      (<- goals (subgoals (>> hyps (judgment is-type))
-                          (>> hyps (judgment is-type))))
-      (refinement
-       goals
-       (lambda (dom cod)
-         #`(→ #,dom #,cod))))]
-    [other (refinement-fail 'String-f
-                            other
-                            "wrong goal")]))
+  (refinement-rule
+   'Fun-f
+   (list)
+   (thunk
+    (match-lambda
+      [(>> hyps (judgment is-type))
+       (proof
+        (<- goals (subgoals (>> hyps (judgment is-type))
+                            (>> hyps (judgment is-type))))
+        (refinement
+         goals
+         (lambda (dom cod)
+           #`(→ #,dom #,cod))))]
+      [other (refinement-fail 'String-f
+                              other
+                              "wrong goal")]))))
 
-(define/contract (Forall-f α)
+(define/contract Forall-f
   (-> symbol? rule/c)
-  (match-lambda
-    [(>> hyps (judgment is-type))
-     (proof (let new-scope (make-syntax-introducer))
-            (let annotated-name (new-scope (datum->syntax #f α) 'add))
-            (<- body (new-meta 'body))
-            (pure (refinement (list (subgoal
-                                     body
-                                     (>> (cons (hypothesis annotated-name
-                                                           (judgment is-type)
-                                                           #t)
-                                               hyps)
-                                         (judgment is-type))))
-                              (lambda (ext)
-                                (type (∀ annotated-name
-                                         (new-scope ext 'add)))))))]
-    [other (refinement-fail 'Forall-f other "Goal must be type")]))
+  (refinement-rule
+   'Forall-f
+   (list (rule-parameter 'α 'name))
+   (lambda (α)
+     (match-lambda
+       [(>> hyps (judgment is-type))
+        (proof (let new-scope (make-syntax-introducer))
+               (let annotated-name (new-scope (datum->syntax #f α) 'add))
+               (<- body (new-meta 'body))
+               (pure (refinement (list (subgoal
+                                        body
+                                        (>> (cons (hypothesis annotated-name
+                                                              (judgment is-type)
+                                                              #t)
+                                                  hyps)
+                                            (judgment is-type))))
+                                 (lambda (ext)
+                                   (type (∀ annotated-name
+                                            (new-scope ext 'add)))))))]
+       [other (refinement-fail 'Forall-f other "Goal must be type")]))))
 
 
 
@@ -276,55 +295,66 @@
      (refinement-fail 'int-intro other "Goal must be Int")]))
 
 
-(define/contract (function-intro x)
-  (-> symbol? rule/c)
-  (match-lambda
-    [(>> hyps (judgment (has-type (type (→ τ σ)))))
-     (proof (let new-scope (make-syntax-introducer))
-            (let annotated-name (new-scope (datum->syntax #f x) 'add))
-            (<- body (new-meta 'fun-body))
-            (pure (refinement (list (subgoal
-                                     body
-                                     (>> (cons (hypothesis annotated-name
-                                                           (judgment (has-type τ))
-                                                           #t)
-                                               hyps)
-                                         (judgment (has-type σ)))))
-                              (lambda (extract)
-                                #`(lambda (#,annotated-name)
-                                    #,(new-scope extract 'add))))))]
-    [other (refinement-fail 'function-intro other "Goal must be function type")]))
+(define function-intro
+  (refinement-rule
+   'function-intro
+   (list (rule-parameter 'x 'name))
+   (lambda (x)
+     (match-lambda
+       [(>> hyps (judgment (has-type (type (→ τ σ)))))
+        (proof (let new-scope (make-syntax-introducer))
+               (let annotated-name (new-scope (datum->syntax #f x) 'add))
+               (<- body (new-meta 'fun-body))
+               (pure (refinement (list (subgoal
+                                        body
+                                        (>> (cons (hypothesis annotated-name
+                                                              (judgment (has-type τ))
+                                                              #t)
+                                                  hyps)
+                                            (judgment (has-type σ)))))
+                                 (lambda (extract)
+                                   #`(lambda (#,annotated-name)
+                                       #,(new-scope extract 'add))))))]
+       [other (refinement-fail 'function-intro other "Goal must be function type")]))))
 
 
 (define/contract application rule/c
-  (match-lambda
-    [(>> hyps (judgment (has-type σ)))
-     (displayln σ)
-     (proof (<- arg-type (new-meta 'arg-type))
-            (<- fun (new-meta 'fun))
-            (<- arg (new-meta 'arg))
-            (pure
-             (refinement
-              (list (subgoal arg-type (>> hyps (judgment is-type)))
-                    (dependent-subgoal
-                     arg-type
-                     (lambda (τ) (subgoal fun (>> hyps (judgment (has-type (type (→ τ σ))))))))
-                    (dependent-subgoal
-                     arg-type
-                     (lambda (τ) (subgoal arg (>> hyps (judgment (has-type τ)))))))
-              (lambda (t f arg)
-                #`(#,f #,arg)))))]))
+  (refinement-rule
+   'application
+   (list)
+   (thunk
+    (match-lambda
+      [(>> hyps (judgment (has-type σ)))
+       (displayln σ)
+       (proof (<- arg-type (new-meta 'arg-type))
+              (<- fun (new-meta 'fun))
+              (<- arg (new-meta 'arg))
+              (pure
+               (refinement
+                (list (subgoal arg-type (>> hyps (judgment is-type)))
+                      (dependent-subgoal
+                       arg-type
+                       (lambda (τ) (subgoal fun (>> hyps (judgment (has-type (type (→ τ σ))))))))
+                      (dependent-subgoal
+                       arg-type
+                       (lambda (τ) (subgoal arg (>> hyps (judgment (has-type τ)))))))
+                (lambda (t f arg)
+                  #`(#,f #,arg)))))]))))
 
 (define/contract Forall-intro rule/c
-  (match-lambda
-    [(>> hyps (judgment (has-type (type (∀ α τ)))))
-     (proof (<- body (new-meta 'body))
-            (pure
-             (refinement
-              (list (subgoal body (>> (cons (hypothesis α (judgment is-type) #t)
-                                            hyps)
-                                      (judgment (has-type τ)))))
-              identity)))]
-    [other (refinement-fail 'forall-intro other "Goal must be universal type")]))
+  (refinement-rule
+   'Forall-intro
+   (list)
+   (thunk
+    (match-lambda
+      [(>> hyps (judgment (has-type (type (∀ α τ)))))
+       (proof (<- body (new-meta 'body))
+              (pure
+               (refinement
+                (list (subgoal body (>> (cons (hypothesis α (judgment is-type) #t)
+                                              hyps)
+                                        (judgment (has-type τ)))))
+                identity)))]
+      [other (refinement-fail 'forall-intro other "Goal must be universal type")]))))
 
 

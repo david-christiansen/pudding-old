@@ -13,9 +13,9 @@
   (require rackunit))
 
 (define/refiner two #'Int
-  (refine length-of-string)
+  (refine (length-of-string))
   (move (down/proof))
-  (refine (string-intro "ab"))
+  (refine (string-intro #'"ab"))
   solve
   (move up)
   solve)
@@ -28,13 +28,13 @@
   (try (refine (function-intro 'fnord)))
   (refine (addition 3))
   (move (down/proof))
-  (refine (int-intro 1))
+  (refine (int-intro #'1))
   solve
   (move right/proof)
   (refine (assumption 0))
   solve
   (move right/proof)
-  (refine (int-intro 1))
+  (refine (int-intro #'1))
   solve
   (move up)
   solve
@@ -51,12 +51,12 @@
   (with-subgoals (refine (function-intro 'n))
     (by
      (with-subgoals (refine (addition 3))
-       (by (refine (int-intro 1)))
+       (by (refine (int-intro #'1)))
        (proof
         skip ;; start by doing nothing, just for the heck of it
         (refine (assumption 0))
         solve)
-       (proof (refine (int-intro 1))
+       (proof (refine (int-intro #'1))
               solve))))
   solve)
 
@@ -64,7 +64,7 @@
   (proof
     (refine (function-intro 'str))
     (move (down/proof))
-    (refine length-of-string)
+    (refine (length-of-string))
     (move (down/proof))
     (refine (assumption 0))
     solve
@@ -76,12 +76,12 @@
 (define/refiner twice-string-length #'(--> String Int)
   (with-subgoals (refine (function-intro 'str))
     (by (with-subgoals (refine (addition 2))
-          (proof (refine length-of-string)
+          (proof (refine (length-of-string))
                  (move (down/proof))
                  (by (refine (assumption 0)))
                  (move up)
                  solve)
-          (proof (refine length-of-string)
+          (proof (refine (length-of-string))
                  (move (down/proof))
                  (by (refine (assumption 0)))
                  (move up)

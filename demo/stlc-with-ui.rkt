@@ -32,7 +32,7 @@
     (string-append
      "(refine (function-intro 'x))\n"
      "(move (down/proof))\n"
-     "(refine length-of-string)\n"
+     "(refine (length-of-string))\n"
      "(move (down/proof))\n"
      "(refine (assumption 0))\n"
      "solve\n"
