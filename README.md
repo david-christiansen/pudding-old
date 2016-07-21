@@ -1,8 +1,8 @@
 Pudding
 =========
 
-[![Build Status](https://travis-ci.org/david-christiansen/pudding.svg?branch=master)](https://travis-ci.org/david-christiansen/racket-refiners)
-[![Coverage Status](https://coveralls.io/repos/github/david-christiansen/pudding/badge.svg?branch=master)](https://coveralls.io/github/david-christiansen/racket-refiners?branch=master)
+[![Build Status](https://travis-ci.org/david-christiansen/pudding.svg?branch=master)](https://travis-ci.org/david-christiansen/pudding)
+[![Coverage Status](https://coveralls.io/repos/github/david-christiansen/pudding/badge.svg?branch=master)](https://coveralls.io/github/david-christiansen/pudding?branch=master)
 
 Pudding is a proof assistant under development at Indiana University, deeply integrated with the Racket programming language.
 
