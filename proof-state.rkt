@@ -25,6 +25,8 @@
          refine
          (struct-out refinement-rule)
          (struct-out rule-parameter)
+         (struct-out rule-application)
+         provided? not-provided?
          movement-possible?
          solve
          dependent
@@ -203,7 +205,15 @@
   #:transparent
   #:property prop:procedure
   (lambda (r . args)
-    (rule-application r args)))
+    (define args-needed (length (refinement-rule-parameters r)))
+    (define args-provided (length args))
+    (if (> args-provided args-needed)
+        (raise-argument-error (refinement-rule-name r)
+                              (format "at most ~a arguments" args-needed)
+                              args)
+        (rule-application r (append (map box args)
+                                    (build-list (- args-needed args-provided)
+                                                (thunk* (box (not-provided)))))))))
 
 
 (struct rule-application (rule arguments) #:transparent)
@@ -225,7 +235,7 @@
                          args)
                  (current-continuation-marks))))
   ;; Check that all argument positions are provided
-  (unless (andmap provided? args)
+  (unless (for/and ([a args]) (provided? (unbox a)))
     (proof-fail (make-exn:fail:contract
                  (format "Some arguments were not provided in ~a" args)
                  (current-continuation-marks))))
@@ -241,7 +251,7 @@
   ;; Finally apply the rule
   (with-handlers ([exn? proof-fail])
     ((apply (contract rule-contract proc name 'proof)
-            args)
+            (map unbox args))
      goal)))
 
 

@@ -8,7 +8,7 @@
 (require macro-debugger/syntax-browser)
 (require macro-debugger/stepper)
 
-(require "gui/presentation-types.rkt" "gui/proof-pict.rkt" "gui/sequent-pict.rkt" "gui/term-pict.rkt")
+(require "gui/commands.rkt" "gui/presentation-types.rkt" "gui/proof-pict.rkt" "gui/sequent-pict.rkt" "gui/term-pict.rkt" "gui/pict-helpers.rkt")
 
 ;; Binding stuff
 (define/contract (decorate-hyp h)
@@ -44,11 +44,6 @@
                    (map decorate-proof children)
                    (lambda args (decorate-identifiers (apply extractor args))))]))
 
-
-
-
-
-
 (define/contract (sequent->big-pict seq canvas)
   (-> sequent? (is-a?/c presentation-pict-canvas%) pict?)
   (match seq
@@ -67,9 +62,6 @@
      (define width (max (pict-width context-pict) (pict-width goal-pict)))
      (define line (filled-rectangle width 1 #:draw-border? #t))
      (vl-append 10 context-pict line goal-pict )]))
-
-
-
 
 (define/contract (extract-pict focus canvas)
   (-> proof-step? (is-a?/c presentation-pict-canvas%) pict?)
@@ -99,71 +91,52 @@
   (define output (read port))
   (values output (file-position port)))
 
-(define proof-script-text%
-  (class text%
-    (init-field advance-callback retract-callback error-callback)
-    (super-new)
 
-    (inherit change-style
-             get-text
-             last-position
-             set-position)
+(define rule/p
+  (make-presentation-type 'rule/p))
 
-    (send this set-styles-sticky #f)
+(define rule-argument/p
+  (make-presentation-type 'rule-argument/p))
 
-    ;; Style for accepted region and editable region
-    (define accepted-bg
-      (send (make-object style-delta%) set-delta-background
-            "green"))
+(define rule-argument-name/p
+  (make-presentation-type 'rule-argument-name/p))
 
-    (define editable-bg
-      (send (make-object style-delta%) set-delta-background
-            "white"))
+(define (present-rule rule canvas)
+  (let ([to-present
+         (cond
+           [(rule-application? rule)
+            rule]
+           [(refinement-rule? rule)
+            (rule)]
+           [else (raise-argument-error
+                  'present-rule
+                  rule
+                  "refinement rule")])])
+    (send canvas make-presentation to-present rule/p
+          (lambda (r)
+            (match-define (rule-application (refinement-rule name params _)
+                                            args)
+              to-present)
+            (define name-pict (text (format "~a" name) '(bold)))
+            (define args-picts
+              (for/list ([arg-box args]
+                         [param params])
+                (send canvas make-presentation arg-box
+                      (match (rule-parameter-sort param)
+                        ['name rule-argument-name/p]
+                        [_ rule-argument/p])
+                      (lambda (presented-arg-box)
+                        (define arg (unbox presented-arg-box))
+                        (if (provided? arg)
+                            (text (format "~a" arg))
+                            (text (format "~a:~a"
+                                          (rule-parameter-name param)
+                                          (rule-parameter-sort param))
+                                  '(italic))))
+                      hl)))
+            (frame (inset (apply hc-append 8 name-pict args-picts) 3)))
+          hl)))
 
-    ;; The editor positions that constitute the ends of each accepted
-    ;; proof step. When advancing the accepted region, the new
-    ;; position is consed on to this.
-    (define steps
-      '(0))
-    (define (save-step! pos)
-      (set! steps (cons pos steps)))
-
-    (define (update-bg)
-      (change-style accepted-bg 0 (car steps) #f)
-      (change-style editable-bg (car steps) 'end #f))
-
-    (define/augment (can-insert? start len)
-      (>= start (car steps)))
-
-    (define/augment (can-delete? start len)
-      (>= start (car steps)))
-
-    (define/public (can-advance?)
-      (for/or ([ch (in-string (get-text (car steps) 'eof #t))])
-        (not (char-whitespace? ch))))
-
-    (define/public (can-retract?)
-      (and (pair? steps)
-           (pair? (cdr steps))))
-
-    ;; Run a command
-    (define/public (advance)
-      (with-handlers ([exn? error-callback])
-        (define step (car steps))
-        (define text (get-text step))
-        (define-values (val len) (read-with-length-from text))
-        (queue-callback (thunk
-                         (with-handlers ([exn? error-callback])
-                           (advance-callback val)
-                           (set-position (+ step len))
-                           (save-step! (+ step len))
-                           (queue-callback (thunk (update-bg))))))))
-
-    (define/public (retract)
-      (when (and (pair? steps) (pair? (cdr steps)))
-        (set! steps (cdr steps))
-        (queue-callback (thunk (update-bg)))
-        (queue-callback (thunk (retract-callback)))))))
 
 
 (define (prover-window namespace goal)
@@ -175,164 +148,171 @@
       (set! proof-state new-state)
       res))
 
-  (define history (list proof-state))
-  (define (checkpoint st)
-    (set! history (cons st history)))
-  (define (undo)
-    (set! proof-state (car history))
-    (set! history (cdr history)))
+  (parameterize ()
+    (define history (list proof-state))
+    (define (checkpoint st)
+      (set! history (cons st history)))
+    (define (undo)
+      (set! proof-state (car history))
+      (set! history (cdr history)))
 
-  (define (on-error e)
-    (send error-view remove-all-picts)
-    (send error-view add-pict (text (exn-message e)) 5 5)
-    (send global-context set-selection 2)
-    (set-tab 2))
+    (define (on-error e)
+      (send error-view remove-all-picts)
+      (send error-view add-pict (text (exn-message e)) 5 5)
+      (displayln e)
+      (send global-context set-selection 2)
+      (set-tab 2))
 
-  (define current-tab 0)
-  (define (update-tab)
-    (match current-tab
-      [0 (send global-context change-children
-               (thunk* (list program-view)))
-         (queue-callback (thunk (send program-view refresh)))]
-      [1 (send global-context change-children
-               (thunk* (list proof-view)))
-         (queue-callback (thunk (send proof-view refresh)))]
-      [2 (send global-context change-children
-               (thunk* (list error-view)))
-         (queue-callback (thunk (send error-view refresh)))]
-      [other (error "Unknown tab")]))
-  (define (set-tab i)
-    (set! current-tab i)
-    (update-tab))
+    (define current-tab 0)
+    (define (update-tab)
+      (match current-tab
+        [0 (send global-context change-children
+                 (thunk* (list program-view)))
+           (queue-callback (thunk (send program-view refresh)))]
+        [1 (send global-context change-children
+                 (thunk* (list proof-view)))
+           (queue-callback (thunk (send proof-view refresh)))]
+        [2 (send global-context change-children
+                 (thunk* (list error-view)))
+           (queue-callback (thunk (send error-view refresh)))]
+        [other (error "Unknown tab")]))
+    (define (set-tab i)
+      (set! current-tab i)
+      (update-tab))
 
-  (define frame
-    (new frame%
-         [label "Pudding Prover"]
-         [width 800]
-         [height 600]))
-  (define menu
-    (new menu-bar% [parent frame]))
-  (define edit-menu
-    (new menu% [parent menu] [label "Edit"]))
-  (append-editor-operation-menu-items edit-menu)
-  (define stack
-    (new vertical-panel% [parent frame]))
-  (define toolbar
-    (new horizontal-panel% [parent stack] [stretchable-height #f]))
-  (define horiz
-    (new panel:vertical-dragable% [parent stack]))
-  (define context
-    (new panel:horizontal-dragable% [parent horiz]))
-  (define node-context
-    (new presentation-pict-canvas% [parent context]))
-  (define global-context
-    (new tab-panel%
-         [parent context]
-         [choices '("Program" "Proof" "Error")]
-         [callback (lambda (panel ev)
-                     (when (eqv? (send ev get-event-type) 'tab-panel)
-                       (set-tab (send global-context get-selection))))]))
-  (define program-view
-    (new presentation-pict-canvas%
-         [parent global-context]))
-  (define proof-view
-    (new presentation-pict-canvas%
-         [parent global-context]))
-  (define error-view
-    (new presentation-pict-canvas%
-         [parent global-context]))
-  (define proof-script
-    (new (class proof-script-text%
-           (super-new)
-           (define/override (on-char ev)
-             (update-buttons)
-             (super on-char ev)))
-         [advance-callback
-          (lambda (prog)
-            (send error-view remove-all-picts)
-            (define st proof-state)
-            (run-action (eval prog namespace))
-            (checkpoint st))]
-         [retract-callback undo]
-         [error-callback on-error]))
+    (define frame
+      (new frame%
+           [label "Pudding Prover"]
+           [width 800]
+           [height 600]))
+    (define menu
+      (new menu-bar% [parent frame]))
+    (define edit-menu
+      (new menu% [parent menu] [label "Edit"]))
+    (append-editor-operation-menu-items edit-menu)
+    (define stack
+      (new vertical-panel% [parent frame]))
+    (define toolbar
+      (new horizontal-panel% [parent stack] [stretchable-height #f]))
+    (define horiz
+      (new panel:vertical-dragable% [parent stack]))
+    (define context
+      (new panel:horizontal-dragable% [parent horiz]))
+    (define node-context
+      (new presentation-pict-canvas% [parent context]))
+    (define global-context
+      (new tab-panel%
+           [parent context]
+           [choices '("Program" "Proof" "Error")]
+           [callback (lambda (panel ev)
+                       (when (eqv? (send ev get-event-type) 'tab-panel)
+                         (set-tab (send global-context get-selection))))]))
+    (define program-view
+      (new presentation-pict-canvas%
+           [parent global-context]))
+    (define proof-view
+      (new presentation-pict-canvas%
+           [parent global-context]))
+    (define error-view
+      (new presentation-pict-canvas%
+           [parent global-context]))
 
-  (define proof-script-keymap
-    (let ([map (send proof-script get-keymap)])
-      (add-editor-keymap-functions map)
-      (add-text-keymap-functions map)
-      (send map add-function "advance" (thunk* (send proof-script advance)
-                                               (queue-callback update-views)))
-      (send map add-function "retract" (thunk* (send proof-script advance)
-                                               (queue-callback update-views)))
-      (for/list ([key '(("m:n" "advance")
-                        ("m:p" "retract")
-                        ("c:n" "next-line")
-                        ("c:p" "previous-line")
-                        ("m:v" "previous-page")
-                        ("c:v" "next-page")
-                        ("c:f" "forward-character")
-                        ("c:b" "backward-character")
-                        ("m:f" "forward-word")
-                        ("m:b" "backward-word")
-                        ("c:a" "beginning-of-line")
-                        ("c:e" "end-of-line")
-                        ("s:m:>" "end-of-file")
-                        ("s:m:<" "beginning-of-file")
-                        ("c:w" "cut-clipboard")
-                        ("m:w" "copy-clipboard")
-                        ("c:y" "paste-clipboard"))])
-        (send map map-function (car key) (cadr key)))
+    (define transparent-yellow
+      (let* ([solid-yellow (make-object color% "yellow")]
+             [r (send solid-yellow red)]
+             [g (send solid-yellow green)]
+             [b (send solid-yellow blue)])
+        (make-object color% r g b 0.2)))
 
-      map))
+    (define (repl-callback input-str)
+      (with-handlers ([exn:fail? on-error])
+        (send error-view remove-all-picts)
+        (define result
+          (eval (with-input-from-string input-str (thunk (read)))
+                namespace))
+        (cond
+          [(or (command? result) (command-app? result))
+           (let ([snip (new presentation-pict-snip%)])
+             (send snip add-pict (present-command result snip) 1 1)
+             snip)]
+          [(or (refinement-rule? result) (rule-application? result))
+           (let ([snip (new presentation-pict-snip%)])
+             (send snip add-pict (present-rule result snip) 1 1)
+             snip)]
+          [(proof-action? result)
+           (run-action result)
+           (update-views)]
+          [else
+           (pstring (format "~a" result))])))
 
-  (define proof-script-holder
-    (new editor-canvas% [parent horiz] [editor proof-script]))
+    (define repl
+      (new presentation-repl%
+           [highlight-callback (lambda (dc x1 y1 x2 y2)
+                                 (define old-brush (send dc get-brush))
+                                 (define old-pen (send dc get-pen))
+                                 (send* dc
+                                   (set-brush transparent-yellow)
+                                   (set-pen transparent-yellow 4 'solid)
+                                   (draw-rectangle x1 y1 x2 y2)
+                                   (set-brush old-brush)
+                                   (set-pen old-pen)))]
+           [eval-callback repl-callback]))
 
-  (define (update-views)
-    (define z (run-action get-zipper))
-    (define focus (zipper-focus z))
-    (send program-view remove-all-picts)
-    (send program-view add-pict (extract-pict focus program-view) 5 5)
-    (send proof-view remove-all-picts)
-    (send proof-view add-pict
-          ((proof-context->pict->pict (zipper-context z) proof-view)
-           (proof->pict (decorate-proof focus) proof-view #:focus? #t))
-          5 5)
-    (send node-context remove-all-picts)
-    (with-handlers ([exn? displayln])
-      (send node-context add-pict
-            (sequent->big-pict (proof-step-goal focus) node-context)
-            5 5))
-    (update-buttons))
+    (define repl-canvas
+      (new editor-canvas% [parent horiz] [editor repl]))
 
-  (define (update-buttons)
-    (send advance-button enable (send proof-script can-advance?))
-    (send retract-button enable (send proof-script can-retract?)))
+    (define (update-views)
+      (define z (run-action get-zipper))
+      (define focus (zipper-focus z))
+      (send program-view remove-all-picts)
+      (send program-view add-pict (extract-pict focus program-view) 5 5)
+      (send proof-view remove-all-picts)
+      (send proof-view add-pict
+            ((proof-context->pict->pict (zipper-context z) proof-view)
+             (proof->pict (decorate-proof focus) proof-view #:focus? #t))
+            5 5)
+      (send node-context remove-all-picts)
+      (with-handlers ([exn? displayln])
+        (send node-context add-pict
+              (sequent->big-pict (proof-step-goal focus) node-context)
+              5 5))
+      (update-buttons))
 
-  (define retract-button
-    (new button%
-         [parent toolbar]
-         [label "Retract"]
-         [callback (thunk* (send proof-script retract)
-                           (queue-callback update-views))]))
-  (define advance-button
-    (new button%
-         [parent toolbar]
-         [label "Advance"]
-         [callback (thunk* (send proof-script advance)
-                           (queue-callback update-views))]))
+    (define (update-buttons)
+      (void))
 
-  (update-views)
+    (send (current-presentation-context) register-command-translator rule/p
+          (lambda (rule)
+            (list (list "Refine goal" (thunk (run-action (refine rule))
+                                             (update-views))))))
 
-  (send frame show #t)
-  ;; After show because otherwise the secondary tabs are first drawn
-  ;; when they are shown during a window resize. This would be nice to
-  ;; diagnose and fix!
-  (set-tab 0))
+    (send (current-presentation-context) register-command-translator proof-step/p
+          (lambda (step)
+            (match step
+              [(with-path (? pair? path) step)
+               (list
+                (list "Move here" (thunk (run-action (for/proof ([direction path])
+                                                       (move direction)))
+                                         (update-views))))]
+              [_ (list)])))
+
+    (update-views)
+
+    (send frame show #t)
+    ;; After show because otherwise the secondary tabs are first drawn
+    ;; when they are shown during a window resize. This would be nice to
+    ;; diagnose and fix!
+    (set-tab 0)))
 
 (define (display-binding id [parent #f])
   (match (identifier-binding id)
-    [(list source-mod source-id nominal-source-mod nominal-source-id source-phase import-phase nominal-export-phase)
+    [(list source-mod
+           source-id
+           nominal-source-mod
+           nominal-source-id
+           source-phase
+           import-phase
+           nominal-export-phase)
      (message-box (format "Info: ~s" (syntax-e id))
                   (format "Name: ~s\nSource module: ~s"
                           (syntax-e id)
@@ -355,6 +335,34 @@
                (list "Macro Stepper" (thunk (expand/step val)))
                (list "Syntax Browser" (thunk (browse-syntax val))))
               (list))))
+
+(send (current-presentation-context) register-command-translator rule-argument-name/p
+      (lambda (arg-box)
+        (define (new-name)
+          (define (valid-symbol? str)
+            (with-handlers ([exn:fail? (thunk* #f)])
+              (symbol? (with-input-from-string str
+                         (thunk (read))))))
+          (define str
+            (get-text-from-user "What name?"
+                                "Provide a name."
+                                #f
+                                ""
+                                '(disallow-invalid)
+                                #:validate valid-symbol?))
+          (when (string? str)
+            (define x (with-input-from-string str
+                        (thunk (read))))
+            (if (symbol? x)
+                (set-box! arg-box x)
+                (error "Not a name")))
+          (send (current-presentation-context) mutation))
+        (if (provided? (unbox arg-box))
+            (list
+             (list "Replace name" new-name))
+            (list
+             (list "Provide name" new-name)))))
+
 
 
 (module+ main
@@ -386,10 +394,10 @@
 
   (require
    'stlc-prover-context)
-  
-  (parameterize ([current-namespace (namespace-anchor->namespace stlc-anchor)])
-    (prover-window (namespace-anchor->namespace stlc-anchor) (decorate-identifiers g)))
 
+  (parameterize ([current-namespace (namespace-anchor->namespace stlc-anchor)])
+    (prover-window (namespace-anchor->namespace stlc-anchor)
+                   (decorate-identifiers g)))
 
   (require
    'ctt-prover-context)

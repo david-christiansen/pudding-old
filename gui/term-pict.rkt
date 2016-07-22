@@ -32,15 +32,15 @@
       (lambda (str)
         (if (string? str)
             (send canvas make-presentation #'x p-type
-                  (opaque (text str)) hl)
+                  (thunk* (opaque (text str))) hl)
             (send canvas make-presentation #'x p-type
-                  str hl)))
+                  (thunk* str) hl)))
       (pp:text (symbol->string (syntax->datum #'x))))]
     [x #:when (metavariable? (syntax-e #'x))
        (pp:markup
         (lambda (str)
           (send canvas make-presentation (syntax-e #'x) metavariable/p
-                (if (string? str) (opaque (text str)) str)
+                (thunk* (if (string? str) (opaque (text str)) str))
                 hl))
         (pp:text (format "~v" (syntax-e #'x))))]
     #;
@@ -61,7 +61,7 @@
      (pp:markup
       (lambda (p)
         (send canvas make-presentation #'(tm ...) expression/p
-              p
+              (thunk* p)
               hl))
       (pp:h-append pp:lparen
                    (pp:v-concat/s (map (lambda (t) (pprint-term t canvas bindings))

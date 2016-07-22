@@ -1,8 +1,8 @@
 #lang racket
 
-(require pict)
+(require pict pict/convert)
 
-(provide (all-defined-out))
+(provide (all-defined-out) pict-convertible?)
 
 (define/contract (opaque pict)
   (-> pict? pict?)

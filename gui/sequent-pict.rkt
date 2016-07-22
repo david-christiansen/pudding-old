@@ -18,7 +18,7 @@
      (define h-id (get-occurrence-id name))
      (define name-pict
        (send canvas make-presentation name (binding/p h-id)
-             (text (format "~a" (syntax-e name)))
+             (thunk* (text (format "~a" (syntax-e name))))
              hl))
      (define assumption-pict
        (term->pict assumption canvas (map hypothesis-name prev)))

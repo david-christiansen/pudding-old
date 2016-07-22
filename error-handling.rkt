@@ -20,6 +20,7 @@
  proof/c
  handle-errors
  proof-pure
+ (rename-out [proof-step? proof-action?])
  define/proof
  for/proof
  for*/proof
