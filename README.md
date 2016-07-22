@@ -9,7 +9,7 @@ Pudding is a proof assistant under development at Indiana University, deeply int
 Status
 ------
 
-Pudding is currently incomplete, and cannot yet be used to prove anything.
+Pudding is currently incomplete, and cannot yet be used to prove anything. Work is currently being done on the foundations of the proof assistant, such as the representation of refinement rules and the proof mechanisms. When these are ready, we can being the task of encoding a type theory for Racket.
 
 Installation Instructions
 -------------------------
