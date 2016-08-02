@@ -19,10 +19,17 @@ Most of Pudding's dependencies are available on the Racket package server. There
 First, clone [the GUI components repository](https://github.com/david-christiansen/racket-presentation-gui). In the checked-out directory, run:
 
 ```
-.../racket-presentation-gui$ raco pkg install -n presentations
+.../racket-presentation-gui$ raco pkg install -n presentations --deps search-auto
+```
+In the above, the `$` represents the prompt. Neither it nor the proceeding text should not be typed in.
+
+Once that's done, check out this repository and enter the directory. To install its dependencies, type:
+
+```
+.../pudding$ raco pkg install -n pudding --deps search-auto
 ```
 
-Once that's done, check out this repository. To test the GUI, run:
+To test the GUI, run:
 
 ```
 .../pudding$ racket presentation-gui.rkt
