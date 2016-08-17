@@ -296,6 +296,15 @@
                                          (update-views))))]
               [_ (list)])))
 
+    (send (current-presentation-context) register-default-command proof-step/p
+          (lambda (step)
+            (match step
+              [(with-path (? pair? path) step)
+               (run-action (for/proof ([direction path])
+                             (move direction)))
+               (update-views)]
+              [_ (void)])))
+
     (update-views)
 
     (send frame show #t)
