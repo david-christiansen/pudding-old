@@ -12,9 +12,9 @@
          (struct-out with-path))
 
 (define proof-vspace 10)
-(define proof-hspace 5)
+(define proof-hspace 8)
 (define by (text "by" '(bold)))
-(define left (text "<=" '(bold)))
+(define left (text "⟸" '(bold)))
 
 (struct with-path (path proof) #:transparent)
 
@@ -90,7 +90,7 @@
                         3))
        (on-box p #:border-width bw)]
       [(refined-step name (>> H G) rule children extractor)
-       (define status (text "➥" '(bold)))
+       (define status (text "⤷" '(bold)))
        (define n (mv name))
        (define p
          (inset (hb-append proof-hspace
@@ -122,7 +122,8 @@
        ;; with the zipper-traversing code
        a-pict]
       [other (on-box (text (format "~v" other)))]))
-  (send canvas make-presentation (with-path path step) proof-step/p
-        (lambda (a-step)
-          (with-children a-step (make-step-pict a-step)))
-        hl))
+  (with-children step
+    (send canvas make-presentation (with-path path step) proof-step/p
+          (lambda (a-step)
+            (make-step-pict a-step))
+          hl)))
