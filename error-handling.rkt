@@ -12,6 +12,7 @@
  ;; The proof monad
  proof
  proof-fail
+ proof-error
  proof-run
  proof-eval
  proof-get proof-put proof-modify
@@ -48,9 +49,13 @@
   #:property prop:procedure (struct-field-index action))
 
 (define/contract (proof-fail reason)
-  (-> any/c proof-step?)
+  (-> exn? proof-step?)
   (proof-step (lambda (state)
                 (failure reason))))
+
+(define/contract (proof-error message)
+  (-> string? proof-step?)
+  (proof-fail (make-exn:fail message (current-continuation-marks))))
 
 (define/contract (proof-pure val)
   (-> any/c proof-step?)

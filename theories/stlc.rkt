@@ -3,7 +3,7 @@
 (require syntax/parse (for-syntax syntax/parse))
 #;(require macro-debugger/syntax-browser)
 (require "../error-handling.rkt" "../define-rule.rkt" "../infrastructure.rkt"
-         "../proofs.rkt" "../proof-state.rkt")
+         "../proofs.rkt" "../proof-state.rkt" "../standard-resources.rkt")
 
 (require (for-template racket/base racket/match))
 
@@ -191,4 +191,16 @@
           (run-program #'body (cons (cons #'x e2-value) env))]
          [_ (error (format "Not a function: ~a" e1-value))]))]))
 
+
+;;; Useful tactics
+(define/proof intro
+  (<- focus get-focus)
+  (match focus
+    [(subgoal _ (>> H goal))
+     (syntax-parse goal
+       #:datum-literals (-->)
+       [(--> dom cod)
+        (refine (function-intro 'x))])]
+    [_ (proof-error "Cannot introduce." )]))
 
+(intro-tactics intro)

@@ -3,7 +3,7 @@
 (require racket/gui framework presentations pict)
 (require zippers)
 (require syntax/parse)
-(require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt" "metavariables.rkt" "expand-bindings.rkt")
+(require "error-handling.rkt" "infrastructure.rkt" "proof-state.rkt" "proofs.rkt" "metavariables.rkt" "expand-bindings.rkt" "standard-resources.rkt")
 (require macro-debugger/expand)
 (require macro-debugger/syntax-browser)
 (require macro-debugger/stepper)
@@ -44,8 +44,11 @@
                    (map decorate-proof children)
                    (lambda args (decorate-identifiers (apply extractor args))))]))
 
-(define/contract (sequent->big-pict seq canvas)
-  (-> sequent? (is-a?/c presentation-pict-canvas%) pict?)
+(define/contract (sequent->big-pict seq canvas [extract #f])
+  (->* (sequent?
+        (is-a?/c presentation-pict-canvas%))
+       ((or/c #f syntax?))
+       pict-convertible?)
   (match seq
     [(>> H G)
      (define context-pict
@@ -58,7 +61,16 @@
                      (cons (hyp->pict (car hyps) canvas (cdr hyps))
                            (loop (cdr hyps))))))))
      (define goal-pict
-       (term->pict G canvas (map hypothesis-name H)))
+       (send canvas make-presentation G goal/p
+             (lambda (G)
+               (hb-append
+                7
+                (if (syntax? extract)
+                    (hb-append 7 (term->pict extract canvas (map hypothesis-name H))
+                               (text ":"))
+                    (text "Goal:"))
+                (term->pict G canvas (map hypothesis-name H))))
+             hl))
      (define width (max (pict-width context-pict) (pict-width goal-pict)))
      (define line (filled-rectangle width 1 #:draw-border? #t))
      (vl-append 10 context-pict line goal-pict )]))
@@ -137,7 +149,12 @@
             (frame (inset (apply hc-append 8 name-pict args-picts) 3)))
           hl)))
 
-
+(define (generic-intro)
+  (let loop ([tactics (intro-tactics)])
+    (if (null? tactics)
+        (proof-error "No applicable introduction rules")
+        (handle-errors (car tactics)
+          [_ (loop (cdr tactics))]))))
 
 (define (prover-window namespace goal)
   (define proof-state
@@ -262,6 +279,13 @@
       (new editor-canvas% [parent horiz] [editor repl]))
 
     (define (update-views)
+      (define (get-extract s)
+        (match s
+          [(? complete-proof?)
+           (complete-proof-extract s)]
+          [(with-path _ s)
+           (get-extract s)]
+          [_ #f]))
       (define z (run-action get-zipper))
       (define focus (zipper-focus z))
       (send program-view remove-all-picts)
@@ -274,7 +298,7 @@
       (send node-context remove-all-picts)
       (with-handlers ([exn? displayln])
         (send node-context add-pict
-              (sequent->big-pict (proof-step-goal focus) node-context)
+              (sequent->big-pict (proof-step-goal focus) node-context (get-extract focus))
               5 5))
       (update-buttons))
 
@@ -316,7 +340,6 @@
                                 (update-views))))]
                [_ (list)]))))
 
-
     (send (current-presentation-context) register-default-command proof-step/p
           (lambda (step)
             (match step
@@ -325,6 +348,11 @@
                              (move direction)))
                (update-views)]
               [_ (void)])))
+
+    (send (current-presentation-context) register-command-translator goal/p
+          (lambda (g)
+            (list (list "Intro" (thunk (run-action (generic-intro))
+                                       (update-views))))))
 
     (update-views)
 
