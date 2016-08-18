@@ -1,6 +1,7 @@
 #lang racket
 
 (require (for-syntax syntax/parse))
+(provide define-resource)
 
 (module+ test (require rackunit))
 
