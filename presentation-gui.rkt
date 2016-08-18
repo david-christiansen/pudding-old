@@ -288,13 +288,34 @@
 
     (send (current-presentation-context) register-command-translator proof-step/p
           (lambda (step)
-            (match step
-              [(with-path (? pair? path) step)
-               (list
-                (list "Move here" (thunk (run-action (for/proof ([direction path])
-                                                       (move direction)))
-                                         (update-views))))]
-              [_ (list)])))
+            (define (solved? s)
+              (match s
+                [(with-path _ inner)
+                 (solved? inner)]
+                [(? complete-proof?)
+                 #t]
+                [_ #f]))
+            (define (all-solved? ss)
+              (andmap solved? ss))
+            (append
+             (match step
+               [(with-path (? pair? path) step)
+                (list
+                 (list "Move here" (thunk (run-action (for/proof ([direction path])
+                                                        (move direction)))
+                                          (update-views))))]
+               [_ (list)])
+             (match step
+               [(with-path path (refined-step _ _ _ (app all-solved? ok) _))
+                #:when ok
+                (list
+                 (list "Solve" (thunk
+                                (run-action (proof (for/proof ([direction path])
+                                                     (move direction))
+                                                   solve))
+                                (update-views))))]
+               [_ (list)]))))
+
 
     (send (current-presentation-context) register-default-command proof-step/p
           (lambda (step)
