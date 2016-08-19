@@ -200,14 +200,21 @@
   (define/proof (>5 x)
     (if (> x 5)
         (pure x)
-        (proof-fail "No way")))
+        (proof-fail (make-exn:fail "No way" (current-continuation-marks)))))
   (define/proof (tester x)
     (handle-errors (proof (<- y (>5 x))
                           (pure y))
-                   ["No way" (proof-fail #f)]))
-  (check-equal? ((tester 1) (void)) (failure #f))
-  (check-equal? ((tester 5) (void)) (failure #f))
-  (check-equal? ((tester 6) (void)) (success 6 (void))))
+      [(? exn? (app exn-message "No way"))
+       (proof-fail (make-exn:fail "nope" (current-continuation-marks)))]))
+  (define (exn-nope? e) (and (exn? e) (equal? (exn-message e) "nope")))
+  (define ((failure-of? pred) f)
+    (match f
+      [(failure e) (pred e)]
+      [_ #f]))
+  (check-true ((failure-of? exn-nope?) ((tester 1) (void))))
+  (check-true ((failure-of? exn-nope?) ((tester 5) (void))) (failure #f))
+  (check-equal? ((tester 6) (void))
+                (success 6 (void))))
 
 (define (proof-chain-list lst)
   (cond
@@ -219,11 +226,11 @@
             (proof-pure (cons hd tl)))]))
 
 (module+ test
-  (check-equal? ((proof-chain-list (list (proof-pure 1)
-                                         (proof-fail "no")
-                                         (proof-pure 2)))
-                 5)
-                (failure "no"))
+  (check-true ((failure-of? exn-nope?)
+               ((proof-chain-list (list (proof-pure 1)
+                                        (proof-error "nope")
+                                        (proof-pure 2)))
+                5)))
   (check-equal? ((proof-chain-list (list (proof-pure 1)
                                          (proof-pure 2)))
                  5)
