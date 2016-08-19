@@ -259,7 +259,7 @@
     (define (update-extract-view focus)
       (define (get-extract f)
         (match f
-          [(subgoal n g) (datum->syntax #f n)]
+          [(subgoal n g) (datum->syntax g n)]
           [(complete-proof _ _ e _) e]
           [(dependent-subgoal waiting next)
            (update-extract-view (next waiting))]

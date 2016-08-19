@@ -79,8 +79,8 @@
   (-> proof-step? (is-a?/c presentation-pict-canvas%) pict?)
   (define (get-extract+hyp-names f)
     (match f
-      [(subgoal n (>> H _))
-       (values (datum->syntax #f n)
+      [(subgoal n (>> H G))
+       (values (datum->syntax G n)
                (map hypothesis-name H))]
       [(complete-proof (>> H _) _ e _)
        (values e (map hypothesis-name H))]
@@ -425,6 +425,7 @@
 
 (module+ main
   (module stlc-prover-context racket/base
+    (require (for-syntax racket/base) (for-template racket/base))
     (require "theories/stlc.rkt")
     (require "tactics.rkt")
     (require zippers)

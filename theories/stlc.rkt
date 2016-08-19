@@ -143,12 +143,12 @@
   #:datum-literals (-->)
   #:scopes (new-scope)
   [(>> hyps (--> dom cod))
-   ([body (>> (cons (hypothesis (new-scope (datum->syntax #f x) 'add)
+   ([body (>> (cons (hypothesis (new-scope (datum->syntax #'dom x) 'add)
                                 #'dom
                                 #t)
                     hyps)
               cod)])
-   (lambda (#,(new-scope (datum->syntax #f x) 'add))
+   (lambda (#,(new-scope (datum->syntax #'dom x) 'add))
      body)])
 
 ;; TODO - rewrite using dependent refinement

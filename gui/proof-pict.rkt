@@ -102,7 +102,7 @@
                                (hb-append proof-hspace
                                           by
                                           (term->pict
-                                           (datum->syntax #f rule)
+                                           (datum->syntax G rule)
                                            canvas
                                            (map hypothesis-name H)))
                                empty))
