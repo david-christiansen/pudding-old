@@ -122,6 +122,13 @@
          ([_ (>> H (in T (Type #,j)))])
          (void)]))
 
+;; Rules for equality
+(define-rule equality-symmetry
+  #:literals (=-in)
+  [(>> H (=-in M N A))
+   ([_ (>> H (=-in N M A))])
+   (void)])
+
 
 ;; Rules for absurdity
 (define-rule absurd-formation
@@ -140,7 +147,7 @@
 (define-rule error-equality
   #:literals (=-in Absurd error)
   [(>> H (=-in (error x) (error y) T))
-   ([_ (>> H (=-in Absurd x y))])
+   ([_ (>> H (=-in x y Absurd))])
    (void)])
 
 (define-match-expander at-hyp
@@ -294,6 +301,13 @@
    ([_ (>> H (=-in #,(beta-reduction #'((lambda (x) body) arg))
                    res
                    T))])
+   (void)])
+
+(define-rule (function-extensionality [x name]) 
+  #:literals (=-in -->)
+  [(>> H (=-in F G (--> A B)))
+   ([_ (>> (cons (hypothesis #'x #'A #t) H)
+           (=-in (F x) (G x) B))])
    (void)])
 
 

@@ -146,7 +146,7 @@
                                           (rule-parameter-sort param))
                                   '(italic))))
                       hl)))
-            (frame (inset (apply hc-append 8 name-pict args-picts) 3)))
+            (opaque (frame (inset (apply hc-append 8 name-pict args-picts) 3))))
           hl)))
 
 (define (generic-intro)
