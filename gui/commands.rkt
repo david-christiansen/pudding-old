@@ -153,13 +153,13 @@
 
   (require "../define-rule.rkt" "../infrastructure.rkt" "../proofs.rkt")
   (define-rule (magic)
-    [(>> H t)
-     ()
-     0])
+    (>> H t)
+    ()
+    0)
   (define-rule (more-magic)
-    [(>> H t)
-     ([t* (>> H t)])
-     (add1 t*)])
+    (>> H t)
+    ([t* (>> H t)])
+    (add1 t*))
 
   (define st (init-proof-state (>> null #'the-goal)))
 

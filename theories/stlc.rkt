@@ -101,9 +101,9 @@
   #:failure-message "Goal type must be Int"
   #:datum-literals (Int)
   #:pre (integer? (syntax-e x))
-  [(>> _ Int)
-   ()
-   #,x])
+  (>> _ Int)
+  ()
+  #,x)
 
 (define addition
   (refinement-rule
@@ -124,40 +124,40 @@
 
 (define-rule length-of-string
   #:failure-message  "Goal type must be Int"
-  [(>> hypotheses Int)
-   ([a-string (>> hypotheses String)])
-   (string-length a-string)])
+  (>> hypotheses Int)
+  ([a-string (>> hypotheses String)])
+  (string-length a-string))
 
 ;;; String rules
 (define-rule (string-intro [str term])
   #:pre (string? (syntax->datum str))
   #:failure-message  "Goal type must be String"
   #:datum-literals (String)
-  [(>> _ String)
-   ()
-   #,str])
+  (>> _ String)
+  ()
+  #,str)
 
 ;;; Function rules
 (define-rule (function-intro [x name])
   #:failure-message "Goal must be function type"
   #:datum-literals (-->)
   #:scopes (new-scope)
-  [(>> hyps (--> dom cod))
-   ([body (>> (cons (hypothesis (new-scope (datum->syntax #'dom x) 'add)
-                                #'dom
-                                #t)
-                    hyps)
-              cod)])
-   (lambda (#,(new-scope (datum->syntax #'dom x) 'add))
-     body)])
+  (>> hyps (--> dom cod))
+  ([body (>> (cons (hypothesis (new-scope (datum->syntax #'dom x) 'add)
+                               #'dom
+                               #t)
+                   hyps)
+             cod)])
+  (lambda (#,(new-scope (datum->syntax #'dom x) 'add))
+    body))
 
 ;; TODO - rewrite using dependent refinement
 (define-rule (application [dom term])
   #:pre (type? dom)
-  [(>> hypotheses goal)
-   ([fun (>> hypotheses (--> #,dom goal))]
-    [arg (>> hypotheses #,dom)])
-   (fun arg)])
+  (>> hypotheses goal)
+  ([fun (>> hypotheses (--> #,dom goal))]
+   [arg (>> hypotheses #,dom)])
+  (fun arg))
 
 ;;; Operational semantics
 (define (run-program stx [env empty])

@@ -91,57 +91,6 @@
        (syntax/loc orig-stx
          (irrelevant-subgoal (>> hyps (quasisyntax concl)))))]))
 
-(define-for-syntax ((rule-clause msg lits dat-lits lit-sets) stx)
-  (syntax-parse stx
-    [(lhs:sequent-stx
-      (~and (~seq sequent-opt ...)
-            (~seq (~or (~seq #:when side-condition:expr)
-                       (~seq #:declare decl-id:id decl-class:expr)) ...))
-      (subgoals:subgoal ...)
-      extract:expr)
-     (let ([names (attribute subgoals.name)]
-           [hyps (attribute subgoals.hypotheses)]
-           [concls (attribute subgoals.conclusion)]
-           [deps (attribute subgoals.depends-on)])
-       (let ([metavars
-              (for/list ([n names] #:when n)
-                (cons n (format-id stx "~a-metavar" n #:source n)))]
-             [extract-vars
-              (for/list ([n names] #:when n)
-                (cons n (format-id stx "~a-ext" n #:source n)))])
-         (with-syntax* ([failure-message msg]
-                        [literals lits]
-                        [datum-literals dat-lits]
-                        [literal-sets lit-sets]
-                        [(metavar-decls ...)
-                         (for/list ([meta metavars])
-                           #`(<- #,(cdr meta) (new-meta '#,(car meta))))]
-                        [(new-goals ...)
-                         (for/list ([n names]
-                                    [d deps]
-                                    [h hyps]
-                                    [c concls])
-                           (make-dependent stx metavars n d h c))]
-                        [(extract-binding ...) (map cdr extract-vars)]
-                        [(extract-stx-binding ...)
-                         (for/list ([e extract-vars])
-                           #`(#,(car e) #,(cdr e)))])
-           #'[(>> lhs.hypotheses some-goal)
-              (syntax-parse some-goal
-                #:literals literals
-                #:datum-literals datum-literals
-                #:literal-sets literal-sets
-                [lhs.goal
-                 sequent-opt ...
-                 (proof
-                  metavar-decls ...
-                  (let goals (list new-goals ...))
-                  (pure (refinement goals
-                                    (lambda (extract-binding ...)
-                                      (with-syntax (extract-stx-binding ...)
-                                        (quasisyntax extract))))))]
-                [_  (proof-fail (make-exn:fail failure-message
-                                               (current-continuation-marks)))])])))]))
 
 
 (define-syntax (rule stx)
@@ -164,34 +113,71 @@
              (~optional (~seq #:pre precondition:expr)
                         #:defaults ([precondition #'#t])))
         ...
-        alt
-        ...)
-     (with-syntax ([(alternatives ...)
-                    (map (rule-clause (attribute failure-message)
-                                      (attribute literals)
-                                      (attribute datum-literals)
-                                      (attribute literal-sets))
-                         (attribute alt))]
-                   [(scope-bindings ...)
-                    (map (lambda (scope-name)
-                           (quasisyntax/loc scope-name
-                             [#,scope-name (make-syntax-introducer)]))
-                         (syntax->list #'(scopes ...)))])
-       #`(lambda (st)
-           (let (scope-bindings ...)
-             (if precondition
-                 (match st
-                   alternatives ...
-                   [other (proof-fail (make-exn:fail:cant-refine
-                                       failure-message
-                                       (current-continuation-marks)
-                                       other))])
-                 (proof-fail (make-exn:fail
-                                   (format "Precondition ~a not met." 'precondition)
-                                   (current-continuation-marks)))))))]))
+        lhs:sequent-stx
+        (~and (~seq sequent-opt ...)
+              (~seq (~or (~seq #:when side-condition:expr)
+                         (~seq #:declare decl-id:id decl-class:expr)) ...))
+        (subgoals:subgoal ...)
+        extract:expr)
+     (let ([names (attribute subgoals.name)]
+           [hyps (attribute subgoals.hypotheses)]
+           [concls (attribute subgoals.conclusion)]
+           [deps (attribute subgoals.depends-on)])
+       (let ([metavars
+              (for/list ([n names] #:when n)
+                (cons n (format-id stx "~a-metavar" n #:source n)))]
+             [extract-vars
+              (for/list ([n names] #:when n)
+                (cons n (format-id stx "~a-ext" n #:source n)))])
+         (with-syntax* ([(metavar-decls ...)
+                         (for/list ([meta metavars])
+                           (quasisyntax/loc #'(subgoals ...)
+                               (<- #,(cdr meta) (new-meta '#,(car meta)))))]
+                        [(new-goals ...)
+                         (for/list ([n names]
+                                    [d deps]
+                                    [h hyps]
+                                    [c concls])
+                           (make-dependent stx metavars n d h c))]
+                        [(extract-binding ...) (map cdr extract-vars)]
+                        [(extract-stx-binding ...)
+                         (for/list ([e extract-vars])
+                           #`(#,(car e) #,(cdr e)))]
+                        [(scope-bindings ...)
+                         (map (lambda (scope-name)
+                                (quasisyntax/loc scope-name
+                                  [#,scope-name (make-syntax-introducer)]))
+                              (syntax->list #'(scopes ...)))])
+           (syntax/loc stx
+               (lambda (st)
+                 (let (scope-bindings ...)
+                   (if precondition
+                       (match st
+                         [(>> lhs.hypotheses some-goal)
+                          (syntax-parse some-goal
+                            #:literals literals
+                            #:datum-literals datum-literals
+                            #:literal-sets literal-sets
+                            [lhs.goal
+                             sequent-opt ...
+                             (proof
+                              metavar-decls ...
+                              (let goals (list new-goals ...))
+                              (pure (refinement goals
+                                                (lambda (extract-binding ...)
+                                                  (with-syntax (extract-stx-binding ...)
+                                                    (quasisyntax extract))))))]
+                            [_  (proof-fail (make-exn:fail failure-message
+                                                           (current-continuation-marks)))])]
+                         [other (proof-fail (make-exn:fail:cant-refine
+                                             failure-message
+                                             (current-continuation-marks)
+                                             other))])
+                       (proof-fail (make-exn:fail
+                                    (format "Precondition ~a not met." 'precondition)
+                                    (current-continuation-marks))))))))))]))
 
 (begin-for-syntax
-
   (define-syntax-class rule-argument-sort
     #:datum-literals (hypothesis name level term context count)
     #:attributes (sort-name)
@@ -211,14 +197,16 @@
 (define-syntax (define-rule stx)
   (syntax-parse stx
     [(_ n:id defn ...)
-     #'(define n
-         (refinement-rule 'n (list) (thunk (rule defn ...))))]
+     (syntax/loc stx
+       (define n
+         (refinement-rule 'n (list) (thunk (rule defn ...)))))]
     [(_ (n:id arg:rule-argument ...) defn ...)
-     #'(define n
+     (syntax/loc stx
+       (define n
          (refinement-rule 'n
                           (list (rule-parameter 'arg.name 'arg.sort) ...)
                           (lambda (arg.name ...)
-                            (rule defn ...))))]))
+                            (rule defn ...)))))]))
 
 (module+ test
   ;;; This macro relies on with-syntax bound syntax pattern variables
@@ -279,48 +267,48 @@
   (define-rule (Σ-formation [x name])
     #:literals (Σ)
     #:scopes (new-scope)
-    [(>> H Type)
-     ([A (>> H Type)]
-      [B (A) (>> (cons (hypothesis (new-scope (datum->syntax #f x) 'add)
-                                   #'A
-                                   #t)
-                       H)
-                 Type)])
-     (Σ (#,(new-scope (datum->syntax #f x) 'add)
-         A)
-        #,(new-scope #'B 'add))])
+    (>> H Type)
+    ([A (>> H Type)]
+     [B (A) (>> (cons (hypothesis (new-scope (datum->syntax #f x) 'add)
+                                  #'A
+                                  #t)
+                      H)
+                Type)])
+    (Σ (#,(new-scope (datum->syntax #f x) 'add)
+        A)
+      #,(new-scope #'B 'add)))
 
   (define-rule Σ-intro
     #:literals (Σ)
-    [(>> H (Σ (x:id A) B))
-     ([a (>> H A)]
-      [b (a) (>> H #,(subst #'a #'x #'B))])
-     (cons a b)])
+    (>> H (Σ (x:id A) B))
+    ([a (>> H A)]
+     [b (a) (>> H #,(subst #'a #'x #'B))])
+    (cons a b))
 
   (define-rule Bool-formation
     #:literals (Type)
-    [(>> H Type)
-     ()
-     Bool])
+    (>> H Type)
+    ()
+    Bool)
 
   (define-rule Bool-intro-1
     #:literals (Bool)
-    [(>> H Bool)
-     ()
-     #t])
+    (>> H Bool)
+    ()
+    #t)
 
   (define-rule Bool-intro-2
     #:literals (Bool)
-    [(>> H Bool)
-     ()
-     #f])
+    (>> H Bool)
+    ()
+    #f)
 
   (define-rule So-intro
     #:literals (So quote)
     #:failure-message "Can only be used with #t"
-    [(>> H (So #t))
-     ()
-     (void)])
+    (>> H (So #t))
+    ()
+    (void))
 
   (define prf-1
     (proof-eval (proof (refine (Σ-intro))
