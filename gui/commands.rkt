@@ -155,11 +155,11 @@
   (define-rule (magic)
     (>> H t)
     ()
-    0)
+    #'0)
   (define-rule (more-magic)
     (>> H t)
-    ([t* (>> H t)])
-    (add1 t*))
+    ([t* (>> H #'t)])
+    #'(add1 t*))
 
   (define st (init-proof-state (>> null #'the-goal)))
 

@@ -103,7 +103,7 @@
   #:pre (integer? (syntax-e x))
   (>> _ Int)
   ()
-  #,x)
+  x)
 
 (define addition
   (refinement-rule
@@ -125,8 +125,8 @@
 (define-rule length-of-string
   #:failure-message  "Goal type must be Int"
   (>> hypotheses Int)
-  ([a-string (>> hypotheses String)])
-  (string-length a-string))
+  ([a-string (>> hypotheses #'String)])
+  #'(string-length a-string))
 
 ;;; String rules
 (define-rule (string-intro [str term])
@@ -135,7 +135,7 @@
   #:datum-literals (String)
   (>> _ String)
   ()
-  #,str)
+  str)
 
 ;;; Function rules
 (define-rule (function-intro [x name])
@@ -147,17 +147,19 @@
                                #'dom
                                #t)
                    hyps)
-             cod)])
-  (lambda (#,(new-scope (datum->syntax #'dom x) 'add))
-    body))
+             #'cod)])
+  #`(lambda (#,(new-scope (datum->syntax #'dom x) 'add))
+      body))
 
 ;; TODO - rewrite using dependent refinement
 (define-rule (application [dom term])
   #:pre (type? dom)
   (>> hypotheses goal)
-  ([fun (>> hypotheses (--> #,dom goal))]
-   [arg (>> hypotheses #,dom)])
-  (fun arg))
+  ([fun (>> hypotheses
+            (with-syntax ([dom dom])
+              #'(--> dom goal)))]
+   [arg (>> hypotheses dom)])
+  #'(fun arg))
 
 ;;; Operational semantics
 (define (run-program stx [env empty])

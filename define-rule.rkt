@@ -82,14 +82,14 @@
                          [hs hyps]
                          [goal concl])
              (syntax/loc orig-stx
-               (subgoal mv-name (>> hs #`goal))))
+               (subgoal mv-name (>> hs goal))))
            (raise-syntax-error
             'rule "Internal error: No metavariable" orig-stx)))]
     [else
      (with-syntax ([hyps hyps]
                    [concl concl])
        (syntax/loc orig-stx
-         (irrelevant-subgoal (>> hyps (quasisyntax concl)))))]))
+         (irrelevant-subgoal (>> hyps concl))))]))
 
 
 
@@ -166,7 +166,7 @@
                               (pure (refinement goals
                                                 (lambda (extract-binding ...)
                                                   (with-syntax (extract-stx-binding ...)
-                                                    (quasisyntax extract))))))]
+                                                    extract)))))]
                             [_  (proof-fail (make-exn:fail failure-message
                                                            (current-continuation-marks)))])]
                          [other (proof-fail (make-exn:fail:cant-refine
@@ -268,47 +268,47 @@
     #:literals (Σ)
     #:scopes (new-scope)
     (>> H Type)
-    ([A (>> H Type)]
+    ([A (>> H #'Type)]
      [B (A) (>> (cons (hypothesis (new-scope (datum->syntax #f x) 'add)
                                   #'A
                                   #t)
                       H)
-                Type)])
-    (Σ (#,(new-scope (datum->syntax #f x) 'add)
-        A)
-      #,(new-scope #'B 'add)))
+                #'Type)])
+    #`(Σ (#,(new-scope (datum->syntax #f x) 'add)
+          A)
+        #,(new-scope #'B 'add)))
 
   (define-rule Σ-intro
     #:literals (Σ)
     (>> H (Σ (x:id A) B))
-    ([a (>> H A)]
-     [b (a) (>> H #,(subst #'a #'x #'B))])
-    (cons a b))
+    ([a (>> H #'A)]
+     [b (a) (>> H (subst #'a #'x #'B))])
+    #'(cons a b))
 
   (define-rule Bool-formation
     #:literals (Type)
     (>> H Type)
     ()
-    Bool)
+    #'Bool)
 
   (define-rule Bool-intro-1
     #:literals (Bool)
     (>> H Bool)
     ()
-    #t)
+    #'#t)
 
   (define-rule Bool-intro-2
     #:literals (Bool)
     (>> H Bool)
     ()
-    #f)
+    #'#f)
 
   (define-rule So-intro
     #:literals (So quote)
     #:failure-message "Can only be used with #t"
     (>> H (So #t))
     ()
-    (void))
+    #'(void))
 
   (define prf-1
     (proof-eval (proof (refine (Σ-intro))
