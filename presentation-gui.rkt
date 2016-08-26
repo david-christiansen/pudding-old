@@ -149,11 +149,24 @@
             (opaque (frame (inset (apply hc-append 8 name-pict args-picts) 3))))
           hl)))
 
+
+;;; A step to run after GUI actions that successfully refine the goal.
+;;; If no subgoals were introduced, mark the goal solved. If subgoals
+;;; were introduced, focus on the first one.
+(define/proof after-refine
+  (<- f get-focus)
+  (if (refined-step? f)
+      (if (null? (refined-step-children f))
+          (proof solve (move up))
+          (move (down/proof 0)))
+      (pure (void))))
+
 (define (generic-intro)
   (let loop ([tactics (intro-tactics)])
     (if (null? tactics)
         (proof-error "No applicable introduction rules")
-        (handle-errors (car tactics)
+        (handle-errors (proof (car tactics) ;; Will often fail
+                              after-refine)
           [_ (loop (cdr tactics))]))))
 
 (define (prover-window namespace goal)
@@ -192,7 +205,9 @@
         [2 (send global-context change-children
                  (thunk* (list error-view)))
            (queue-callback (thunk (send error-view refresh)))]
-        [other (error "Unknown tab")]))
+        [other (error "Unknown tab")])
+      (update-views))
+
     (define (set-tab i)
       (set! current-tab i)
       (update-tab))
@@ -307,7 +322,8 @@
 
     (send (current-presentation-context) register-command-translator rule/p
           (lambda (rule)
-            (list (list "Refine goal" (thunk (run-action (refine rule))
+            (list (list "Refine goal" (thunk (run-action (proof (refine rule)
+                                                                after-refine))
                                              (update-views))))))
 
     (send (current-presentation-context) register-command-translator proof-step/p
